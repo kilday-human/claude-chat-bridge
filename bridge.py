@@ -1,61 +1,57 @@
+import streamlit as st
 import os
-import sys
-import argparse
-from requests.exceptions import HTTPError
+from dotenv import load_dotenv
+from openai import OpenAI
+from anthropic import Client as ClaudeClient
+from metrics import compare_responses
 
-from claude_wrapper import send_to_claude
-from chatgpt_wrapper import send_to_chatgpt
+# Load environment variables from .env file
+load_dotenv()
 
-def bridge_conversation(initial_prompt, turns=1, claude_fn=send_to_claude, chatgpt_fn=send_to_chatgpt):
-    """
-    Orchestrates a conversation: sends initial_prompt to Claude,
-    then alternates between ChatGPT and Claude for `turns` iterations.
-    Returns a transcript list.
-    """
-    transcript = [{"role": "user", "content": initial_prompt[0]["content"]}]
-    history = list(initial_prompt)
-    for turn in range(turns):
-        claude_resp = claude_fn(history)
-        transcript.append({"role": "assistant", "from": "claude", "content": claude_resp["content"]})
-        history.append(claude_resp)
-
-        if turn < turns - 1:
-            chatgpt_resp = chatgpt_fn(history)
-            transcript.append({"role": "assistant", "from": "chatgpt", "content": chatgpt_resp["content"]})
-            history.append(chatgpt_resp)
-
-    return transcript
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("prompt", help="Initial prompt for the bridge")
-    parser.add_argument("turns", nargs="?", type=int, default=2, help="Number of Claude↔ChatGPT turns")
-    parser.add_argument("--mock", action="store_true", help="Run in mock mode with canned responses")
-    args = parser.parse_args()
-
-    if args.mock:
-        print("🚀 Running in MOCK mode—no real API calls.")
-        claude_fn   = lambda msgs: {"role":"assistant","content":"[Mock Claude reply]"}
-        chatgpt_fn  = lambda msgs: {"role":"assistant","content":"[Mock ChatGPT reply]"}
-    else:
-        if not os.getenv("CLAUDE_API_KEY") or not os.getenv("OPENAI_API_KEY"):
-            print("ERROR: set CLAUDE_API_KEY and OPENAI_API_KEY (or use --mock).")
-            sys.exit(1)
-        claude_fn  = send_to_claude
-        chatgpt_fn = send_to_chatgpt
-
-    try:
-        transcript = bridge_conversation(
-            initial_prompt=[{"role":"user","content":args.prompt}],
-            turns=args.turns,
-            claude_fn=claude_fn,
-            chatgpt_fn=chatgpt_fn
+# ──────────────────────────────────────────────────────────────────────────────
+# 1) Initialize OpenAI and Anthropic clients using secrets.toml
+# ──────────────────────────────────────────────────────────────────────────────
+openai = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+claude = ClaudeClient(api_key=os.getenv("CLAUDE_API_KEY"))
+st.title("ChatGPT ↔ Claude Bridge")
+# ──────────────────────────────────────────────────────────────────────────────
+# 2) Inputs from the user: prompt + (optional) keywords
+# ──────────────────────────────────────────────────────────────────────────────
+prompt = st.text_area("Enter Prompt", height=150)
+keywords_input = st.text_input("Keywords (comma-sep)", "")
+keywords = {k.strip() for k in keywords_input.split(",") if k.strip()}
+if st.button("Run Comparison"):
+    with st.spinner("Calling APIs…"):
+        # ──────────────────────────────────────────────────────────────────
+        # 3a) Call OpenAI's chat completion (GPT-4o-mini)
+        # ──────────────────────────────────────────────────────────────────
+        res_a = openai.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}]
         )
-    except HTTPError as e:
-        print(f"API error: {e}\nCheck your keys or network.")
-        sys.exit(1)
-
-    for msg in transcript:
-        speaker = msg["role"]
-        src     = msg.get("from","user")
-        print(f"[{speaker}/{src}]: {msg['content']}\n")
+        resp_a = res_a.choices[0].message.content
+        # ──────────────────────────────────────────────────────────────────
+        # 3b) Call Anthropic's Messages API (Claude Opus 4) with lowercase roles
+        # ──────────────────────────────────────────────────────────────────
+        anthropic_messages = [
+            {"role": "user", "content": prompt}
+        ]
+        res_b = claude.messages.create(
+            model="claude-opus-4-20250514",
+            messages=anthropic_messages,
+            max_tokens=1000
+        )
+        resp_b = res_b.content[0].text  # Fixed: Use Anthropic's response format
+    # ──────────────────────────────────────────────────────────────────────────
+    # 4) Display both LLM responses side by side
+    # ──────────────────────────────────────────────────────────────────────────
+    st.subheader("Responses")
+    cols = st.columns(2)
+    cols[0].markdown(f"**ChatGPT (gpt-4o-mini)**  \n{resp_a}")
+    cols[1].markdown(f"**Claude (claude-opus-4-20250514)**  \n{resp_b}")
+    # ──────────────────────────────────────────────────────────────────────────
+    # 5) Compute & display keyword‐based comparison metrics
+    # ──────────────────────────────────────────────────────────────────────────
+    results = compare_responses(resp_a, resp_b, keywords)
+    st.subheader("Metrics")
+    st.json(results)
