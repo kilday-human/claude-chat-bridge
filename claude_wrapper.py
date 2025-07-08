@@ -10,48 +10,46 @@ load_dotenv(dotenv_path="./.env")
 CLAUDE_API_KEY = os.getenv("CLAUDE_API_KEY")
 logger = logging.getLogger("bridge.claude")
 
-def _anthropic_prompt(messages):
-    role_map = {"user": "Human", "assistant": "Assistant"}
-    p = ""
-    for m in messages:
-        role = role_map.get(m["role"].lower(), m["role"].capitalize())
-        p += f"{role}: {m['content']}\n\n"
-    p += "Assistant:"
-    return p
-
-@retry(reraise=True, stop=stop_after_attempt(5), wait=wait_fibonacci_jitter(max_attempts=5))
-def send_to_claude(messages):
+@retry(
+    stop=stop_after_attempt(5),
+    wait=wait_fibonacci_jitter(),
+    reraise=True
+)
+def send_to_claude(messages, model="claude-3-haiku-20240307"):
+    """
+    Send a list of messages to Claude using the modern /v1/messages API
+    Returns the content string from Claude's response
+    """
     if not CLAUDE_API_KEY:
-        raise RuntimeError("CLAUDE_API_KEY environment variable is not set")
-
-    prompt = _anthropic_prompt(messages)
-    payload = {
-        "model": "claude-3-opus-20240229",
-        "prompt": prompt,
-        "max_tokens_to_sample": 512,
-        "stop_sequences": ["\n\nHuman:"],
-    }
+        raise ValueError("CLAUDE_API_KEY environment variable not set")
+    
+    if CLAUDE_API_KEY.startswith("your-"):
+        logger.debug(f"DEBUG CLAUDE_API_KEY startswith: your …")
+    else:
+        logger.debug(f"DEBUG CLAUDE_API_KEY startswith: {CLAUDE_API_KEY[:8]} …")
+    
     headers = {
         "x-api-key": CLAUDE_API_KEY,
-        "anthropic-version": "2023-06-01",
         "Content-Type": "application/json",
+        "anthropic-version": "2023-06-01"
     }
-
-    start = time.perf_counter()
-    resp = requests.post("https://api.anthropic.com/v1/complete", json=payload, headers=headers)
-    latency = time.perf_counter() - start
-    logger.info("Claude call latency: %.3f sec", latency)
-
+    
+    payload = {
+        "model": model,
+        "max_tokens": 1000,
+        "messages": messages
+    }
+    
+    logger.debug(f"DEBUG claude payload: {payload}")
+    logger.debug(f"DEBUG claude headers: {headers}")
+    
+    resp = requests.post("https://api.anthropic.com/v1/messages", json=payload, headers=headers)
+    
+    logger.debug(f"DEBUG status_code: {resp.status_code}")
+    logger.debug(f"DEBUG response body: {resp.text}")
+    
     resp.raise_for_status()
+    
     data = resp.json()
-
-    # when running your pytest harness, they’ll return this form:
-    if "assistant_response" in data:
-        return data["assistant_response"]["content"]
-
-    # production API returns “completion”
-    if "completion" in data:
-        return data["completion"].strip()
-
-    raise ValueError(f"Unexpected response format: {data!r}")
-
+    content = data["content"][0]["text"]
+    return content
