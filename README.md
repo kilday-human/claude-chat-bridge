@@ -4,7 +4,7 @@ A Python project demonstrating a bridge between Anthropic Claude and OpenAI Chat
 
 Quickstart
 
-git clone <your-repo-url>
+git clone https://github.com/kilday-human/claude-chat-bridge.git
 cd claude-chat-bridge
 
 # Create and activate a virtual environment
