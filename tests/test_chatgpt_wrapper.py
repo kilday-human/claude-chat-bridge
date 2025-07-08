@@ -1,10 +1,13 @@
-import pytest
-from unittest.mock import patch
+import os
+os.environ["OPENAI_API_KEY"] = "test"
+os.environ["CLAUDE_API_KEY"] = "test"
+
 from chatgpt_wrapper import send_to_chatgpt
+from unittest.mock import patch
 
 @patch("chatgpt_wrapper.requests.post")
 def test_chatgpt_wrapper_basic(mock_post):
-    # Arrange: mock a successful ChatGPT response
+    # Mock successful response
     mock_post.return_value.status_code = 200
     mock_post.return_value.json.return_value = {
         "choices": [
@@ -12,11 +15,6 @@ def test_chatgpt_wrapper_basic(mock_post):
         ]
     }
 
-    # Act
-    result = send_to_chatgpt([{"role": "user", "content": "Hi ChatGPT!"}])
-
-    # Assert
-    assert isinstance(result, dict)
-    assert result["role"] == "assistant"
-    assert "Hello from ChatGPT!" in result["content"]
+    result = send_to_chatgpt([{"role": "user", "content": "Hi"}])
+    assert result == "Hello from ChatGPT!"
 

@@ -1,3 +1,7 @@
+import os
+os.environ["OPENAI_API_KEY"] = "test"
+os.environ["CLAUDE_API_KEY"] = "test"
+
 import pytest
 from unittest.mock import patch, MagicMock
 from requests.exceptions import HTTPError
