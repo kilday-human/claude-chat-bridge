@@ -10,3 +10,5 @@ __pycache__/
 secrets.toml
 **/*.toml
 secrets.toml
+*.backup
+*.save
