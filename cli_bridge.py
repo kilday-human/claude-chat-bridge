@@ -53,15 +53,29 @@ def _safe_text(text: str, ensure_output: bool) -> str:
 
 
 def call_gpt(transcript: str, *, model: str, max_tokens: int,
-             ensure_output: bool, log_cost: bool, mock: bool) -> Tuple[str, Dict]:
-    text, meta = send_to_chatgpt(
-        transcript,
-        model=model,
-        max_output_tokens=max_tokens,
-        ensure_output=ensure_output,
-        log_cost=log_cost,
-        mock=mock,
-    )
+             ensure_output: bool, log_cost: bool, mock: bool):
+    # Try new keyword first; fall back to older wrappers that use max_tokens
+    try:
+        text, meta = send_to_chatgpt(
+            transcript,
+            model=model,
+            max_output_tokens=max_tokens,
+            ensure_output=ensure_output,
+            log_cost=log_cost,
+            mock=mock,
+        )
+    except TypeError as e:
+        if "max_output_tokens" in str(e):
+            text, meta = send_to_chatgpt(
+                transcript,
+                model=model,
+                max_tokens=max_tokens,  # older wrappers
+                ensure_output=ensure_output,
+                log_cost=log_cost,
+                mock=mock,
+            )
+        else:
+            raise
     return _safe_text(text, ensure_output), meta
 
 
