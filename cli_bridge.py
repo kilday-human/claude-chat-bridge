@@ -46,7 +46,7 @@ def _print_debug_header(args):
         print("[DEBUG] log_cost=True (usage/cost will be logged if available).")
 
 
-def _safe_text(text: str, ensure_output: bool) -> str:
+def ___safe_text(text: str, ensure_output: bool) -> str:
     if text and text.strip():
         return text.strip()
     return "[no-text-returned]" if ensure_output else ""
@@ -58,10 +58,10 @@ def call_gpt(transcript: str, *, model: str, max_tokens: int,
     if mock:
         low = (transcript or "").lower()
         if "bridge-ok" in low:
-            return safe_text("bridge-ok", ensure_output), {"model": "gpt-mock", "usage": {"in": 0, "out": 2}}
+            return "bridge-ok", {"model": "gpt-mock", "usage": {"in": 0, "out": 2}}
         if "echo 'done'" in low:
-            return safe_text("I am alive. done", ensure_output), {"model": "gpt-mock", "usage": {"in": 0, "out": 4}}
-        return safe_text("mock-response", ensure_output), {"model": "gpt-mock", "usage": {"in": 0, "out": 2}}
+            return "I am alive. done", {"model": "gpt-mock", "usage": {"in": 0, "out": 4}}
+        return "mock-response", {"model": "gpt-mock", "usage": {"in": 0, "out": 2}}
 
     # Otherwise, adapt to whatever wrapper signature exists
     base = {"transcript": transcript, "model": model}
@@ -76,7 +76,7 @@ def call_gpt(transcript: str, *, model: str, max_tokens: int,
     for extra in attempts:
         try:
             text, meta = send_to_chatgpt(**base, **extra)
-            return _safe_text(text, ensure_output), meta
+            return ___safe_text(text, ensure_output), meta
         except TypeError as e:
             last_err = e
             continue
@@ -92,7 +92,7 @@ def call_claude(transcript: str, *, model: str, max_tokens: int,
         max_tokens=max_tokens,
         mock=mock,
     )
-    return _safe_text(text, ensure_output), meta
+    return ___safe_text(text, ensure_output), meta
 
 
 def bridge_turn(transcript: str,
