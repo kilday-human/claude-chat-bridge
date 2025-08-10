@@ -54,29 +54,33 @@ def _safe_text(text: str, ensure_output: bool) -> str:
 
 def call_gpt(transcript: str, *, model: str, max_tokens: int,
              ensure_output: bool, log_cost: bool, mock: bool):
-    # Try new keyword first; fall back to older wrappers that use max_tokens
-    try:
-        text, meta = send_to_chatgpt(
-            transcript,
-            model=model,
-            max_output_tokens=max_tokens,
-            ensure_output=ensure_output,
-            log_cost=log_cost,
-            mock=mock,
-        )
-    except TypeError as e:
-        if "max_output_tokens" in str(e):
-            text, meta = send_to_chatgpt(
-                transcript,
-                model=model,
-                max_tokens=max_tokens,  # older wrappers
-                ensure_output=ensure_output,
-                log_cost=log_cost,
-                mock=mock,
-            )
-        else:
-            raise
-    return _safe_text(text, ensure_output), meta
+    # If mock, don't call the wrapper at all—return canned output.
+    if mock:
+        low = (transcript or "").lower()
+        if "bridge-ok" in low:
+            return _safe_text("bridge-ok", ensure_output), {"model": "gpt-mock", "usage": {"in": 0, "out": 2}}
+        if "echo 'done'" in low:
+            return _safe_text("I am alive. done", ensure_output), {"model": "gpt-mock", "usage": {"in": 0, "out": 4}}
+        return _safe_text("mock-response", ensure_output), {"model": "gpt-mock", "usage": {"in": 0, "out": 2}}
+
+    # Otherwise, adapt to whatever wrapper signature exists
+    base = {"transcript": transcript, "model": model}
+    attempts = [
+        {"max_output_tokens": max_tokens, "ensure_output": ensure_output, "log_cost": log_cost, "mock": mock},
+        {"max_tokens": max_tokens,        "ensure_output": ensure_output, "log_cost": log_cost, "mock": mock},
+        {"max_tokens": max_tokens,        "mock": mock},
+        {"max_tokens": max_tokens},
+        {},
+    ]
+    last_err = None
+    for extra in attempts:
+        try:
+            text, meta = send_to_chatgpt(**base, **extra)
+            return _safe_text(text, ensure_output), meta
+        except TypeError as e:
+            last_err = e
+            continue
+    raise last_err
 
 
 def call_claude(transcript: str, *, model: str, max_tokens: int,
