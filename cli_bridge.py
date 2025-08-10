@@ -58,10 +58,10 @@ def call_gpt(transcript: str, *, model: str, max_tokens: int,
     if mock:
         low = (transcript or "").lower()
         if "bridge-ok" in low:
-            return _safe_text("bridge-ok", ensure_output), {"model": "gpt-mock", "usage": {"in": 0, "out": 2}}
+            return safe_text("bridge-ok", ensure_output), {"model": "gpt-mock", "usage": {"in": 0, "out": 2}}
         if "echo 'done'" in low:
-            return _safe_text("I am alive. done", ensure_output), {"model": "gpt-mock", "usage": {"in": 0, "out": 4}}
-        return _safe_text("mock-response", ensure_output), {"model": "gpt-mock", "usage": {"in": 0, "out": 2}}
+            return safe_text("I am alive. done", ensure_output), {"model": "gpt-mock", "usage": {"in": 0, "out": 4}}
+        return safe_text("mock-response", ensure_output), {"model": "gpt-mock", "usage": {"in": 0, "out": 2}}
 
     # Otherwise, adapt to whatever wrapper signature exists
     base = {"transcript": transcript, "model": model}

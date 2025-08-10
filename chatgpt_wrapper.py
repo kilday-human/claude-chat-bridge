@@ -1,241 +1,187 @@
-# chatgpt_wrapper.py
-# Robust OpenAI wrapper that supports GPT-5 (Responses API) and legacy Chat Completions.
-# Returns (text, meta) and prints concise debug info.
-
-import os
-import json
-import time
-from typing import Any, Dict, List, Tuple, Union
+#!/usr/bin/env python3
+"""
+Robust ChatGPT wrapper with GPT-5 Responses API support
+Replaces the legacy chatgpt_wrapper.py with proper error handling
+"""
 
 import requests
+import json
+import os
+from typing import Dict, Any, Tuple, Optional
 
-# Optional token counting (won't crash if tiktoken isn't available)
-try:
-    from token_utils import count_gpt_tokens  # repo helper
-except Exception:
-    def count_gpt_tokens(_payload: Union[str, List[Dict[str, str]]], _model: str) -> Union[int, None]:
-        return None
+def _text_from_responses_api(data: Dict[str, Any]) -> str:
+    """Extract text from GPT-5 Responses API format"""
+    output = data.get("output")
+    if not isinstance(output, list):
+        return ""
+    
+    parts = []
+    for item in output or []:
+        if not isinstance(item, dict):
+            continue
+            
+        # Look for message type output
+        if item.get("type") == "message":
+            content = item.get("content", [])
+            for content_item in content:
+                if isinstance(content_item, dict) and content_item.get("type") == "output_text":
+                    text = content_item.get("text", "")
+                    if text:
+                        parts.append(str(text))
+    
+    return "".join(parts).strip()
 
-OPENAI_API_BASE = os.environ.get("OPENAI_API_BASE", "https://api.openai.com/v1")
-
-def _mask_key(k: str) -> str:
-    if not k:
-        return "MISSING"
-    if len(k) <= 6:
-        return k
-    return f"{k[:4]}…{k[-4:]}"
-
-def _get_key(public: bool) -> str:
-    if public:
-        return os.environ.get("OPENAI_API_KEY_PUBLIC", "")
-    return os.environ.get("OPENAI_API_KEY", "")
-
-def _is_gpt5(model: str) -> bool:
-    return model.lower().startswith("gpt-5")
-
-def _debug_print(title: str, value: Any) -> None:
-    # Keep logs readable & small
-    try:
-        if isinstance(value, (dict, list)):
-            s = json.dumps(value, ensure_ascii=False)[:500]
-        else:
-            s = str(value)[:500]
-        print(f"[DEBUG][GPT] {title}: {s}")
-    except Exception:
-        print(f"[DEBUG][GPT] {title}: (unprintable)")
-
-def _parse_gpt5_response(data: Dict[str, Any]) -> Tuple[str, Dict[str, Any]]:
-    """
-    Parse OpenAI Responses API (GPT-5) format robustly:
-    - data['output'] is a list containing items of type 'reasoning' and/or 'message'
-    - a 'message' has content list entries with type 'output_text' { text: ... }
-    - response may be 'incomplete' due to max_output_tokens; might include reasoning only
-    """
-    if "model" in data:
-        print(f"[DEBUG][GPT] API reports model: {data['model']}")
-
-    status = data.get("status")
-    incomplete = status == "incomplete"
-    incomplete_reason = data.get("incomplete_details", {}).get("reason")
-
-    text_chunks: List[str] = []
-
-    for item in data.get("output", []):
-        t = item.get("type")
-        # If it's a completed message block
-        if t == "message":
-            # Claude-like shape but in OpenAI responses: content is list of segments
-            for seg in item.get("content", []):
-                if seg.get("type") == "output_text":
-                    txt = seg.get("text")
-                    if isinstance(txt, str):
-                        text_chunks.append(txt)
-        # Some variants may emit top-level output_text items
-        elif t == "output_text":
-            txt = item.get("text")
-            if isinstance(txt, str):
-                text_chunks.append(txt)
-
-    text = "".join(text_chunks).strip()
-
-    usage_obj = data.get("usage", {}) or {}
-    in_tok = usage_obj.get("input_tokens")
-    out_tok = usage_obj.get("output_tokens")
-    total_tok = None
-    if isinstance(in_tok, int) and isinstance(out_tok, int):
-        total_tok = in_tok + out_tok
-
-    meta: Dict[str, Any] = {
-        "model": data.get("model"),
-        "usage": {
-            "in": in_tok,
-            "out": out_tok,
-            "total": total_tok,
-        },
-        "status": status,
-        "incomplete": incomplete,
-        "incomplete_reason": incomplete_reason,
-    }
-
-    return text, meta
-
-def _parse_chat_completions_response(data: Dict[str, Any]) -> Tuple[str, Dict[str, Any]]:
-    """
-    Parse legacy Chat Completions format.
-    """
-    if "model" in data:
-        print(f"[DEBUG][GPT] API reports model: {data['model']}")
-    choices = data.get("choices") or []
-    content = ""
-    if choices:
-        msg = choices[0].get("message") or {}
-        content = (msg.get("content") or "").strip()
-
-    usage_obj = data.get("usage", {}) or {}
-    in_tok = usage_obj.get("prompt_tokens")
-    out_tok = usage_obj.get("completion_tokens")
-    total_tok = usage_obj.get("total_tokens")
-
-    meta: Dict[str, Any] = {
-        "model": data.get("model"),
-        "usage": {
-            "in": in_tok,
-            "out": out_tok,
-            "total": total_tok,
-        },
-        "status": "completed",
-        "incomplete": False,
-        "incomplete_reason": None,
-    }
-    return content, meta
+def _text_from_chat_completions(data: Dict[str, Any]) -> str:
+    """Extract text from legacy Chat Completions API format"""
+    choices = data.get("choices", [])
+    if not choices:
+        return ""
+    
+    choice = choices[0]
+    message = choice.get("message", {})
+    return message.get("content", "").strip()
 
 def send_to_chatgpt(
-    transcript: Union[str, List[Dict[str, str]]],
-    model: str = None,
+    transcript: str,
+    model: str = "gpt-5",
     public: bool = False,
-    max_tokens: int = 512,
+    max_tokens: int = 1024,
+    temperature: float = 1.0,
+    **kwargs  # Accept any additional kwargs for compatibility
 ) -> Tuple[str, Dict[str, Any]]:
     """
-    Send a prompt or messages to OpenAI.
-    - If model starts with gpt-5 -> use Responses API with 'input' and 'max_output_tokens'
-    - Else -> use Chat Completions with 'messages'
-    Returns (text, meta)
+    Send transcript to ChatGPT and return response text + metadata
+    
+    Args:
+        transcript: The input text to send
+        model: Model name (gpt-5, gpt-4, etc.)
+        public: Whether to use public endpoint (unused for now)
+        max_tokens: Maximum output tokens
+        temperature: Sampling temperature
+        **kwargs: Additional parameters for compatibility
+    
+    Returns:
+        Tuple of (response_text, full_api_response)
     """
-    env_model = os.environ.get("OPENAI_MODEL", "").strip()
-    model = (model or env_model or "gpt-5").strip()
-
-    api_key = _get_key(public)
+    
+    # Get API key
+    api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
-        raise RuntimeError("OPENAI_API_KEY is missing (and OPENAI_API_KEY_PUBLIC if public=True).")
-
-    print(f"[DEBUG][GPT] Using model: {model} | public={public}")
-    print(f"[DEBUG][GPT] Key: {_mask_key(api_key)}")
-
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
-    }
-
-    # Build request
-    is_gpt5 = _is_gpt5(model)
-
-    if is_gpt5:
-        # Responses API: https://api.openai.com/v1/responses
-        url = f"{OPENAI_API_BASE}/responses"
-        # 'input' can be a string or a messages array; both worked in your logs.
-        if isinstance(transcript, list):
-            payload_input = transcript
-        else:
-            payload_input = str(transcript)
-
-        payload: Dict[str, Any] = {
-            "model": model,
-            "input": payload_input,
-            "max_output_tokens": max_tokens if isinstance(max_tokens, int) and max_tokens > 0 else 512,
-        }
-        print(f"[DEBUG][GPT] Endpoint: {url}")
-        _debug_print("Payload", payload)
-
-        t0 = time.time()
-        resp = requests.post(url, headers=headers, json=payload, timeout=90)
-        t1 = time.time()
-
-        if resp.status_code != 200:
-            print(f"[DEBUG][GPT] HTTP {resp.status_code} in {t1 - t0:.3f}s (responses API)")
-            try:
-                print("[DEBUG][GPT] Error body:", json.dumps(resp.json(), ensure_ascii=False))
-            except Exception:
-                print("[DEBUG][GPT] Error body: (unprintable)")
-            resp.raise_for_status()
-
-        print(f"[DEBUG][GPT] HTTP 200 in {t1 - t0:.3f}s")
-        data = resp.json()
-        text, meta = _parse_gpt5_response(data)
-        meta["latency_s"] = round(t1 - t0, 3)
-
-        # If it came back incomplete because the model used all tokens on reasoning,
-        # return an empty string rather than crashing; caller can decide what to do.
-        if meta.get("incomplete") and not text:
-            # Provide a tiny fallback string so upstream doesn’t explode.
-            text = ""
-
-        return text, meta
-
-    else:
-        # Legacy Chat Completions
-        url = f"{OPENAI_API_BASE}/chat/completions"
-
-        if isinstance(transcript, list):
-            messages = transcript
-        else:
-            messages = [{"role": "user", "content": str(transcript)}]
-
-        # Keep params compatible with modern 4o/mini
+        raise ValueError("OPENAI_API_KEY environment variable is required")
+    
+    # Determine endpoint and payload based on model
+    if model.startswith("gpt-5"):
+        # Use new Responses API for GPT-5
+        endpoint = "https://api.openai.com/v1/responses"
         payload = {
             "model": model,
-            "messages": messages,
-            "max_tokens": max_tokens if isinstance(max_tokens, int) and max_tokens > 0 else 512,
+            "input": transcript,
+            "max_output_tokens": max_tokens,
+            "temperature": temperature
         }
+    else:
+        # Use Chat Completions API for GPT-4 and earlier
+        endpoint = "https://api.openai.com/v1/chat/completions"
+        payload = {
+            "model": model,
+            "messages": [{"role": "user", "content": transcript}],
+            "max_tokens": max_tokens,
+            "temperature": temperature
+        }
+    
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+    
+    # Make the API call
+    try:
+        response = requests.post(endpoint, headers=headers, json=payload, timeout=30)
+        response.raise_for_status()
+        data = response.json()
+    except requests.exceptions.RequestException as e:
+        raise ValueError(f"[GPT] API request failed: {e}")
+    except json.JSONDecodeError as e:
+        raise ValueError(f"[GPT] Invalid JSON response: {e}")
+    
+    # Handle API errors
+    if "error" in data:
+        error_msg = data["error"].get("message", "Unknown error")
+        raise ValueError(f"[GPT] API error: {error_msg}")
+    
+    # Check for incomplete responses (GPT-5 specific)
+    status = data.get("status")
+    if status == "incomplete":
+        incomplete = data.get("incomplete_details") or {}
+        incomplete_reason = incomplete.get("reason", "unknown")
+        if incomplete_reason == "max_output_tokens":
+            raise ValueError(f"[GPT] Response incomplete due to max_output_tokens limit. "
+                           f"Try increasing max_tokens (current: {max_tokens})")
+        else:
+            raise ValueError(f"[GPT] Response incomplete: {incomplete_reason}")
+    
+    # Extract text based on API format
+    if model.startswith("gpt-5"):
+        text = _text_from_responses_api(data)
+    else:
+        text = _text_from_chat_completions(data)
+    
+    if not text:
+        # Log the response for debugging
+        print(f"[DEBUG][GPT] No text extracted from response: {json.dumps(data, indent=2)}")
+        return "", data
+    
+    return text, data
 
-        print(f"[DEBUG][GPT] Endpoint: {url}")
-        _debug_print("Payload", payload)
-        _debug_print("Headers", {k: (v if k != "Authorization" else f"Bearer {_mask_key(api_key)}") for k, v in headers.items()})
+def mock_send_to_chatgpt(
+    transcript: str,
+    model: str = "gpt-5",
+    **kwargs
+) -> Tuple[str, Dict[str, Any]]:
+    """
+    Mock version for testing without API calls
+    """
+    # Simple mock responses based on input
+    if "bridge-ok" in transcript.lower():
+        text = "bridge-ok"
+    elif "alive" in transcript.lower() and "done" in transcript.lower():
+        text = "I am not alive; I am an AI model.\ndone"
+    elif "haiku" in transcript.lower():
+        text = "Code flows between minds,\nAI voices in harmony—\nBridge spans silicon."
+    elif "quantum" in transcript.lower():
+        text = "Quantum computing harnesses quantum mechanical phenomena like superposition and entanglement to process information exponentially faster than classical computers for specific problems."
+    elif "*" in transcript and "+" in transcript:  # Math operation
+        text = "4890"  # Mock result for 17 * 234 + 892
+    else:
+        text = f"Mock response to: {transcript[:50]}{'...' if len(transcript) > 50 else ''}"
+    
+    # Mock metadata
+    mock_data = {
+        "id": "mock_response_123",
+        "model": model,
+        "usage": {"input_tokens": len(transcript.split()), "output_tokens": len(text.split()), "total_tokens": len(transcript.split()) + len(text.split())},
+        "mock": True
+    }
+    
+    return text, mock_data
 
-        t0 = time.time()
-        resp = requests.post(url, headers=headers, json=payload, timeout=90)
-        t1 = time.time()
+# For backwards compatibility
+def send_to_gpt(*args, **kwargs):
+    """Legacy function name compatibility"""
+    return send_to_chatgpt(*args, **kwargs)
 
-        if resp.status_code != 200:
-            print(f"[DEBUG][GPT] HTTP {resp.status_code} in {t1 - t0:.3f}s")
-            try:
-                print("[DEBUG][GPT] Error body:", json.dumps(resp.json(), ensure_ascii=False))
-            except Exception:
-                print("[DEBUG][GPT] Error body: (unprintable)")
-            resp.raise_for_status()
-
-        print(f"[DEBUG][GPT] HTTP 200 in {t1 - t0:.3f}s")
-        data = resp.json()
-        text, meta = _parse_chat_completions_response(data)
-        meta["latency_s"] = round(t1 - t0, 3)
-        return text, meta
-
+if __name__ == "__main__":
+    # Quick test
+    try:
+        result, meta = mock_send_to_chatgpt("Reply 'bridge-ok' only.")
+        print(f"Mock test: {result}")
+        
+        # Test real API if key is available
+        if os.getenv("OPENAI_API_KEY"):
+            result, meta = send_to_chatgpt("Reply 'test-ok' only.", model="gpt-5", max_tokens=64)
+            print(f"Real API test: {result}")
+        else:
+            print("No API key found, skipping real test")
+            
+    except Exception as e:
+        print(f"Test failed: {e}")
