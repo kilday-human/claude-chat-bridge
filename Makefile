@@ -3,7 +3,7 @@
 # Create venv and install dependencies
 venv:
 	python3 -m venv .venv
-	. .venv/bin/activate && pip install -r requirements.txt
+	. .venv/bin/activate && pip install -r requirements.txt ruff
 
 # Activate venv (use: make activate; then copy the command it prints)
 activate:
@@ -22,6 +22,10 @@ run:
 live:
 	. .venv/bin/activate && python3 cli_bridge.py "Hello real run" --router
 
+# Lint the codebase with Ruff
+lint:
+	. .venv/bin/activate && ruff check .
+
 # Show available commands
 help:
 	@echo "Available make commands:"
@@ -30,4 +34,5 @@ help:
 	@echo "  make test     - Run test suite"
 	@echo "  make run      - Quick mock demo (no API calls)"
 	@echo "  make live     - Real run with router enabled"
+	@echo "  make lint     - Run linter (ruff) to check code quality"
 	@echo "  make help     - Show this help message"
