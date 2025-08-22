@@ -189,3 +189,68 @@ Anthropic API
 
 Status: ✅ MVP functional with router + cost ledger
 Last Updated: August 21, 2025
+
+## 🛠 Using Makefile
+
+For convenience, a `Makefile` is included with common tasks:
+
+```bash
+# Create virtual environment and install dependencies
+make venv
+
+# Show how to activate the environment
+make activate
+
+# Run tests
+make test
+
+# Quick mock demo (no API calls)
+make run
+
+# Real run (API calls with router enabled)
+make live
+
+
+## 🛠 Using Makefile
+
+For convenience, a `Makefile` is included with common tasks:
+
+\`\`\`bash
+# Create virtual environment and install dependencies
+make venv
+
+# Show how to activate the environment
+make activate
+
+# Run tests
+make test
+
+# Quick mock demo (no API calls)
+make run
+
+# Real run (API calls with router enabled)
+make live
+\`\`\`
+
+
+## 🛠 Using Makefile
+
+For convenience, a `Makefile` is included with common tasks:
+
+\`\`\`bash
+# Create virtual environment and install dependencies
+make venv
+
+# Show how to activate the environment
+make activate
+
+# Run tests
+make test
+
+# Quick mock demo (no API calls)
+make run
+
+# Real run (API calls with router enabled)
+make live
+\`\`\`
+
