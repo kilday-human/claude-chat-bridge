@@ -12,3 +12,4 @@ secrets.toml
 secrets.toml
 *.backup
 *.save
+.venv/
