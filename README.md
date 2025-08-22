@@ -1,3 +1,30 @@
+# Claude–GPT Bridge 🔗🤖
+
+**AI-to-AI conversation framework.**  
+Seamlessly route prompts between **OpenAI GPT (including GPT-5)** and **Anthropic Claude**, with cost logging, mock testing, and router heuristics.
+
+---
+
+## ✨ Highlights
+- 🔄 **Bridge Conversations**: GPT ↔ Claude in sequential or parallel modes  
+- 💸 **Cost Ledger**: Tracks token usage + $ across runs  
+- 🧪 **Mock Mode**: Safe, offline testing with stub responses  
+- 🚦 **Router**: Heuristic routing (cheap vs strong model) built in  
+- ⚡ **CLI First**: Simple one-liner commands for devs  
+
+---
+
+## 🚀 Quick Start
+```bash
+git clone https://github.com/kilday-human/claude-chat-bridge.git
+cd claude-chat-bridge
+python3 -m venv bridge-env && source bridge-env/bin/activate
+pip install -r requirements.txt
+
+# Run your first bridged conversation:
+python3 cli_bridge.py "Hello world" --router
+👉 Dive into full usage & docs ↓ for advanced commands, testing, and model configs.
+
 # Claude Chat Bridge
 
 A Python CLI tool that bridges conversations between OpenAI's GPT models (including GPT-5) and Anthropic's Claude models, enabling AI-to-AI conversations and comparisons.
