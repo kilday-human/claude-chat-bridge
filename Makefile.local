@@ -1,0 +1,7 @@
+.PHONY: demo demo-mock
+
+demo:
+	python3 cli_bridge.py "Hello bridge, route me cheap please." --router on --log-cost
+
+demo-mock:
+	python3 cli_bridge.py "Hello bridge, route me cheap please." --router on --log-cost --mock

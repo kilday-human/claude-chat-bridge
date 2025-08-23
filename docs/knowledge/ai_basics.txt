@@ -1,0 +1,4 @@
+Artificial Intelligence (AI) refers to computer systems that can perform tasks typically requiring human intelligence.
+Machine Learning is a subset of AI that enables systems to learn from data without explicit programming.
+Large Language Models (LLMs) like GPT and Claude are AI systems trained on vast amounts of text data.
+Natural Language Processing (NLP) is the branch of AI focused on understanding and generating human language.

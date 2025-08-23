@@ -1,0 +1,4 @@
+The Claude-GPT Bridge is an AI orchestration system that routes queries between different language models.
+It uses intelligent routing to select appropriate models based on query complexity and requirements.
+The system includes cost tracking, performance monitoring, and citation management for transparency.
+RAG (Retrieval-Augmented Generation) enhances responses by incorporating relevant external knowledge.
