@@ -46,6 +46,36 @@ A Python CLI tool that bridges conversations between OpenAI's GPT models (includ
 - OpenAI API key (for GPT models)  
 - Anthropic API key (for Claude models)  
 
+
+## 🎤 Demo Guide
+
+The bridge supports both safe **mock runs** and **live API runs**.
+
+### Mock Mode (safe, free)
+```bash
+make eval
+```
+Runs a canned eval suite with `[mock-chatgpt-reply]` responses. Shows router decisions and cost logging without spending tokens.
+
+### Live Mode (real APIs, costs logged)
+```bash
+make eval-live
+```
+Runs the same suite against real APIs. Costs are tiny (fractions of a cent), but you’ll see **real answers**.
+
+### Raw Receipts (under the hood)
+```bash
+make eval-json
+make eval-json-live
+```
+Adds a JSON dump of the raw ledger entries at the end of the run. Use this when you want to show audit-style receipts.
+
+### Logs Viewer
+```bash
+make logs
+```
+Shows the last 10 cost ledger entries in a pretty format.
+
 ## 🛠️ Installation
 
 ```bash
