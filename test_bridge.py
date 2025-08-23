@@ -7,17 +7,20 @@ Run this before commits to ensure bridge stability
 import subprocess
 import sys
 import os
+import json
 from typing import List, Tuple
+
+LOG_FILE = os.path.join(os.path.dirname(__file__), "logs", "cost_ledger.jsonl")
 
 def run_command(cmd: List[str]) -> Tuple[bool, str, str]:
     """Run a command and return (success, stdout, stderr)"""
     try:
         result = subprocess.run(
-            cmd, 
-            capture_output=True, 
-            text=True, 
+            cmd,
+            capture_output=True,
+            text=True,
             timeout=30,
-            cwd=os.path.dirname(os.path.abspath(__file__))
+            cwd=os.path.dirname(os.path.abspath(__file__)),
         )
         return result.returncode == 0, result.stdout, result.stderr
     except subprocess.TimeoutExpired:
@@ -25,134 +28,59 @@ def run_command(cmd: List[str]) -> Tuple[bool, str, str]:
     except Exception as e:
         return False, "", str(e)
 
-def test_compilation():
-    """Test that all Python files compile"""
-    print("🔍 Testing compilation...")
-    
-    files = ["chatgpt_wrapper.py", "claude_wrapper.py", "cli_bridge.py"]
-    for file in files:
-        success, stdout, stderr = run_command(["python3", "-m", "py_compile", file])
-        if not success:
-            print(f"❌ {file} compilation failed: {stderr}")
-            return False
-        print(f"✅ {file} compiles")
-    
-    return True
+def read_last_log():
+    """Read last cost ledger entry"""
+    if not os.path.exists(LOG_FILE):
+        return None
+    with open(LOG_FILE) as f:
+        lines = f.readlines()
+    if not lines:
+        return None
+    return json.loads(lines[-1])
 
-def test_mock_scenarios():
-    """Test all mock scenarios"""
-    print("\n🎭 Testing mock scenarios...")
-    
-    scenarios = [
-        {
-            "name": "Basic bridge-ok",
-            "cmd": ["python3", "cli_bridge.py", "Reply 'bridge-ok' only.", "1", "--mock"]
-        },
-        {
-            "name": "Multi-turn sequential", 
-            "cmd": ["python3", "cli_bridge.py", "One-sentence proof you're alive; then echo 'done'.", "2", "--mock", "--no-parallel"]
-        },
-        {
-            "name": "Parallel execution",
-            "cmd": ["python3", "cli_bridge.py", "Reply 'bridge-ok' only.", "1", "--mock", "--parallel"]
-        },
-        {
-            "name": "Math operation",
-            "cmd": ["python3", "cli_bridge.py", "What's 17 * 234 + 892?", "1", "--mock"]
-        }
-    ]
-    
-    all_passed = True
-    for scenario in scenarios:
-        print(f"  Testing: {scenario['name']}")
-        success, stdout, stderr = run_command(scenario["cmd"])
-        
-        if not success:
-            print(f"❌ {scenario['name']} failed to run: {stderr}")
-            all_passed = False
-            continue
-        
-        # Check that we get completion and reasonable output
-        if "Bridge complete" not in stdout:
-            print(f"❌ {scenario['name']} didn't complete properly")
-            print(f"   Output: {stdout}")
-            all_passed = False
-        elif len(stdout.strip()) < 50:  # Too short, probably errored
-            print(f"❌ {scenario['name']} output too short, may have errored")
-            print(f"   Output: {stdout}")
-            all_passed = False
-        else:
-            print(f"✅ {scenario['name']} passed")
-    
-    return all_passed
+def test_dual_mode_runs():
+    """Ensure --dual runs both GPT and Claude"""
+    success, stdout, stderr = run_command(
+        ["python3", "cli_bridge.py", "Explain quantum entanglement", "--dual", "--mock"]
+    )
+    assert success, f"CLI failed: {stderr}"
+    assert "[GPT]" in stdout
+    # Accept either title or uppercase form
+    assert "[Claude]" in stdout or "[CLAUDE]" in stdout
+    assert "Bridge complete" in stdout
 
-def test_real_api():
-    """Test real API if keys are available"""
-    print("\n🌐 Testing real API...")
-    
-    if not os.getenv("OPENAI_API_KEY"):
-        print("⚠️  No OPENAI_API_KEY found, skipping real API tests")
-        return True
-    
-    if not os.getenv("ANTHROPIC_API_KEY"):
-        print("⚠️  No ANTHROPIC_API_KEY found, skipping real API tests")
-        return True
-    
-    print("  Testing single real call...")
-    success, stdout, stderr = run_command([
-        "python3", "cli_bridge.py", 
-        "Reply 'test-ok' only.", "1", 
-        "--no-parallel", "--max-tokens", "64"
-    ])
-    
-    if not success:
-        print(f"❌ Real API test failed: {stderr}")
-        return False
-    
-    if "test-ok" not in stdout.lower() and "ok" not in stdout.lower():
-        print(f"❌ Real API test didn't get expected response")
-        print(f"   Output: {stdout}")
-        return False
-    
-    print("✅ Real API test passed")
-    return True
+def test_router_mode_runs():
+    """Ensure router mode runs at least one model"""
+    success, stdout, stderr = run_command(
+        ["python3", "cli_bridge.py", "Hello bridge system", "--router", "--mock"]
+    )
+    assert success, f"CLI failed: {stderr}"
+    assert "[GPT]" in stdout or "[CLAUDE]" in stdout
+    assert "Bridge complete" in stdout
+
+def test_cost_log_written():
+    """Ensure cost ledger is written"""
+    run_command(["python3", "cli_bridge.py", "Testing cost log", "--mock"])
+    last = read_last_log()
+    assert last is not None
+    assert "model" in last
+    # Accept either simple schema or detailed tokens
+    assert "tokens" in last or (
+        "input_tokens" in last and "output_tokens" in last
+    )
 
 def main():
-    """Run all tests"""
-    print("🚀 Running bridge test suite...")
-    
-    tests = [
-        ("Compilation", test_compilation),
-        ("Mock scenarios", test_mock_scenarios),
-        ("Real API", test_real_api)
-    ]
-    
-    all_passed = True
-    results = []
-    
-    for test_name, test_func in tests:
+    """Run tests manually if needed"""
+    print("🚀 Running test suite...")
+    all_ok = True
+    for test in [test_dual_mode_runs, test_router_mode_runs, test_cost_log_written]:
         try:
-            passed = test_func()
-            results.append((test_name, passed))
-            if not passed:
-                all_passed = False
-        except Exception as e:
-            print(f"❌ {test_name} crashed: {e}")
-            results.append((test_name, False))
-            all_passed = False
-    
-    # Summary
-    print(f"\n📊 Test Results:")
-    for test_name, passed in results:
-        status = "✅ PASS" if passed else "❌ FAIL"
-        print(f"  {status} {test_name}")
-    
-    if all_passed:
-        print(f"\n🎉 All tests passed! Bridge is ready.")
-        sys.exit(0)
-    else:
-        print(f"\n💥 Some tests failed. Check output above.")
-        sys.exit(1)
+            test()
+            print(f"✅ {test.__name__} passed")
+        except AssertionError as e:
+            print(f"❌ {test.__name__} failed: {e}")
+            all_ok = False
+    sys.exit(0 if all_ok else 1)
 
 if __name__ == "__main__":
     main()

@@ -1,0 +1,103 @@
+.PHONY: venv activate install run live lint lint-fix test clean reset session stop ci eval eval-live logs
+
+# === Environment Management ===
+
+venv:
+	python3 -m venv .venv
+
+activate:
+	. .venv/bin/activate
+
+install: venv
+	. .venv/bin/activate && pip install -r requirements.txt
+
+clean:
+	rm -rf .venv __pycache__ .pytest_cache logs/*.jsonl
+
+reset: clean install
+
+# === Run Modes ===
+
+run:
+	python3 cli_bridge.py "Hello bridge system" --mock
+
+live:
+	python3 cli_bridge.py "Hello bridge system"
+
+# === Quality ===
+
+lint:
+	ruff check .
+
+lint-fix:
+	ruff check . --fix
+
+test:
+	pytest -v test_bridge.py
+
+ci: lint test
+
+# === Dev Session Lifecycle ===
+
+session:
+	./session.sh
+
+stop:
+	.tools/stop-session.sh
+
+# === Eval Harness ===
+
+eval:
+	python3 evals/eval_bridge.py
+
+eval-live:
+	python3 evals/eval_bridge.py --live
+
+# === Logs Viewer ===
+
+logs:
+	python3 tools/show_logs.py
+
+# Run eval harness with raw JSON receipts (mock by default)
+eval-json:
+	python3 evals/eval_bridge.py --show-json
+
+# Run eval harness live with raw JSON receipts
+eval-json-live:
+	python3 evals/eval_bridge.py --live --show-json
+
+# === Documentation Helpers ===
+
+# Insert Demo Guide into README.md (macOS/BSD sed syntax)
+doc:
+	sed -i '' -e '/## 🛠️ Installation/i\
+\
+## 🎤 Demo Guide\
+\
+The bridge supports both safe **mock runs** and **live API runs**.\
+\
+### Mock Mode (safe, free)\
+```bash\
+make eval\
+```\
+Runs a canned eval suite with `[mock-chatgpt-reply]` responses. Shows router decisions and cost logging without spending tokens.\
+\
+### Live Mode (real APIs, costs logged)\
+```bash\
+make eval-live\
+```\
+Runs the same suite against real APIs. Costs are tiny (fractions of a cent), but you’ll see **real answers**.\
+\
+### Raw Receipts (under the hood)\
+```bash\
+make eval-json\
+make eval-json-live\
+```\
+Adds a JSON dump of the raw ledger entries at the end of the run. Use this when you want to show audit-style receipts.\
+\
+### Logs Viewer\
+```bash\
+make logs\
+```\
+Shows the last 10 cost ledger entries in a pretty format.\
+' README.md

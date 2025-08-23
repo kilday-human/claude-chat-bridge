@@ -1,8 +1,10 @@
 """
 chatgpt_wrapper.py — wrapper to call OpenAI ChatGPT API.
+Returns (text, metadata) for consistency with Claude wrapper.
 """
 
 import os
+import time
 import requests
 from dotenv import load_dotenv
 
@@ -12,16 +14,21 @@ load_dotenv()
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 ENDPOINT = "https://api.openai.com/v1/chat/completions"
-DEFAULT_MODEL = "gpt-4o-mini"
+DEFAULT_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
 
-def send_to_chatgpt(prompt: str, mock: bool = False) -> str:
+def send_to_chatgpt(prompt: str, mock: bool = False):
     """
     Send a prompt to OpenAI ChatGPT.
-    If mock=True, return a fake reply.
+    Returns: (text, metadata) just like Claude wrapper.
     """
     if mock:
-        return f"[mock-chatgpt-reply] {prompt[:40]}..."
+        text = f"[mock-chatgpt-reply] {prompt[:40]}..."
+        return text, {
+            "model": "chatgpt-mock",
+            "usage": {"in": 0, "out": len(text.split()), "total": len(text.split())},
+            "latency_s": 0.001,
+        }
 
     if not OPENAI_API_KEY:
         raise ValueError("OPENAI_API_KEY environment variable is required")
@@ -37,9 +44,10 @@ def send_to_chatgpt(prompt: str, mock: bool = False) -> str:
         "temperature": 0.7,
     }
 
-    resp = requests.post(ENDPOINT, headers=headers, json=body)
+    t0 = time.perf_counter()
+    resp = requests.post(ENDPOINT, headers=headers, json=body, timeout=60)
+    latency = time.perf_counter() - t0
 
-    # Defensive error handling
     try:
         resp.raise_for_status()
     except Exception as e:
@@ -57,6 +65,24 @@ def send_to_chatgpt(prompt: str, mock: bool = False) -> str:
 
     data = resp.json()
     try:
-        return data["choices"][0]["message"]["content"]
+        text = data["choices"][0]["message"]["content"]
     except Exception:
-        return f"[chatgpt-wrapper-error] unexpected response: {data}"
+        text = f"[chatgpt-wrapper-error] unexpected response: {data}"
+
+    # Estimate tokens very roughly by word count
+    out_tokens = len(text.split())
+    in_tokens = len(prompt.split())
+    total_tokens = in_tokens + out_tokens
+
+    metadata = {
+        "model": DEFAULT_MODEL,
+        "usage": {"in": in_tokens, "out": out_tokens, "total": total_tokens},
+        "latency_s": round(latency, 3),
+    }
+
+    return text, metadata
+
+
+if __name__ == "__main__":
+    t, m = send_to_chatgpt("Hello world", mock=True)
+    print("ChatGPT(mock):", t, m)
