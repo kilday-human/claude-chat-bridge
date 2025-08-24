@@ -1,0 +1,100 @@
+{
+  "eval_id": "demo_eval_eval_1756008816_5",
+  "timestamp": 1756008816.8761432,
+  "config": {
+    "router": true,
+    "rag": false,
+    "cache": true,
+    "guardrails": true,
+    "model": null,
+    "mock": true
+  },
+  "results": [
+    {
+      "test_case_id": "basic_qa_1",
+      "prompt": "What is artificial intelligence?",
+      "response": "",
+      "model": "unknown",
+      "metrics": {
+        "latency": 8.821487426757812e-06
+      },
+      "metadata": {
+        "error_details": "Traceback (most recent call last):\n  File \"/Users/parental/Dev/claude-chat-bridge/src/eval_harness.py\", line 470, in evaluate_single_test\n    response, metadata = self.bridge_function(\n                         ~~~~~~~~~~~~~~~~~~~~^\n        test_case.prompt,\n        ^^^^^^^^^^^^^^^^^\n        **(config or {})\n        ^^^^^^^^^^^^^^^^\n    )\n    ^\n  File \"/Users/parental/Dev/claude-chat-bridge/src/guardrails_system.py\", line 711, in wrapper\n    response, metadata = func(*args, **kwargs)\n                         ~~~~^^^^^^^^^^^^^^^^^\nTypeError: EnhancedBridge.process_request() got an unexpected keyword argument 'router'\n"
+      },
+      "execution_time": 8.821487426757812e-06,
+      "success": false,
+      "error": "EnhancedBridge.process_request() got an unexpected keyword argument 'router'"
+    },
+    {
+      "test_case_id": "reasoning_1",
+      "prompt": "If a train leaves Station A at 2 PM traveling at 60 mph, and another train leaves Station B at 3 PM traveling at 80 mph toward Station A, and the stations are 280 miles apart, when will they meet?",
+      "response": "",
+      "model": "unknown",
+      "metrics": {
+        "latency": 7.152557373046875e-06
+      },
+      "metadata": {
+        "error_details": "Traceback (most recent call last):\n  File \"/Users/parental/Dev/claude-chat-bridge/src/eval_harness.py\", line 470, in evaluate_single_test\n    response, metadata = self.bridge_function(\n                         ~~~~~~~~~~~~~~~~~~~~^\n        test_case.prompt,\n        ^^^^^^^^^^^^^^^^^\n        **(config or {})\n        ^^^^^^^^^^^^^^^^\n    )\n    ^\n  File \"/Users/parental/Dev/claude-chat-bridge/src/guardrails_system.py\", line 711, in wrapper\n    response, metadata = func(*args, **kwargs)\n                         ~~~~^^^^^^^^^^^^^^^^^\nTypeError: EnhancedBridge.process_request() got an unexpected keyword argument 'router'\n"
+      },
+      "execution_time": 7.152557373046875e-06,
+      "success": false,
+      "error": "EnhancedBridge.process_request() got an unexpected keyword argument 'router'"
+    },
+    {
+      "test_case_id": "creative_1",
+      "prompt": "Write a short story about a robot who learns to paint.",
+      "response": "",
+      "model": "unknown",
+      "metrics": {
+        "latency": 5.245208740234375e-06
+      },
+      "metadata": {
+        "error_details": "Traceback (most recent call last):\n  File \"/Users/parental/Dev/claude-chat-bridge/src/eval_harness.py\", line 470, in evaluate_single_test\n    response, metadata = self.bridge_function(\n                         ~~~~~~~~~~~~~~~~~~~~^\n        test_case.prompt,\n        ^^^^^^^^^^^^^^^^^\n        **(config or {})\n        ^^^^^^^^^^^^^^^^\n    )\n    ^\n  File \"/Users/parental/Dev/claude-chat-bridge/src/guardrails_system.py\", line 711, in wrapper\n    response, metadata = func(*args, **kwargs)\n                         ~~~~^^^^^^^^^^^^^^^^^\nTypeError: EnhancedBridge.process_request() got an unexpected keyword argument 'router'\n"
+      },
+      "execution_time": 5.245208740234375e-06,
+      "success": false,
+      "error": "EnhancedBridge.process_request() got an unexpected keyword argument 'router'"
+    },
+    {
+      "test_case_id": "analysis_1",
+      "prompt": "Analyze the pros and cons of remote work from both employee and employer perspectives.",
+      "response": "",
+      "model": "unknown",
+      "metrics": {
+        "latency": 4.0531158447265625e-06
+      },
+      "metadata": {
+        "error_details": "Traceback (most recent call last):\n  File \"/Users/parental/Dev/claude-chat-bridge/src/eval_harness.py\", line 470, in evaluate_single_test\n    response, metadata = self.bridge_function(\n                         ~~~~~~~~~~~~~~~~~~~~^\n        test_case.prompt,\n        ^^^^^^^^^^^^^^^^^\n        **(config or {})\n        ^^^^^^^^^^^^^^^^\n    )\n    ^\n  File \"/Users/parental/Dev/claude-chat-bridge/src/guardrails_system.py\", line 711, in wrapper\n    response, metadata = func(*args, **kwargs)\n                         ~~~~^^^^^^^^^^^^^^^^^\nTypeError: EnhancedBridge.process_request() got an unexpected keyword argument 'router'\n"
+      },
+      "execution_time": 4.0531158447265625e-06,
+      "success": false,
+      "error": "EnhancedBridge.process_request() got an unexpected keyword argument 'router'"
+    },
+    {
+      "test_case_id": "technical_1",
+      "prompt": "Explain how a REST API works and provide a simple example.",
+      "response": "",
+      "model": "unknown",
+      "metrics": {
+        "latency": 4.0531158447265625e-06
+      },
+      "metadata": {
+        "error_details": "Traceback (most recent call last):\n  File \"/Users/parental/Dev/claude-chat-bridge/src/eval_harness.py\", line 470, in evaluate_single_test\n    response, metadata = self.bridge_function(\n                         ~~~~~~~~~~~~~~~~~~~~^\n        test_case.prompt,\n        ^^^^^^^^^^^^^^^^^\n        **(config or {})\n        ^^^^^^^^^^^^^^^^\n    )\n    ^\n  File \"/Users/parental/Dev/claude-chat-bridge/src/guardrails_system.py\", line 711, in wrapper\n    response, metadata = func(*args, **kwargs)\n                         ~~~~^^^^^^^^^^^^^^^^^\nTypeError: EnhancedBridge.process_request() got an unexpected keyword argument 'router'\n"
+      },
+      "execution_time": 4.0531158447265625e-06,
+      "success": false,
+      "error": "EnhancedBridge.process_request() got an unexpected keyword argument 'router'"
+    }
+  ],
+  "aggregate_metrics": {
+    "success_rate": 0.0
+  },
+  "performance_analysis": {
+    "error": "No successful results to analyze"
+  },
+  "cost_analysis": {},
+  "recommendations": [
+    "Low success rate (0.0%). Consider implementing better error handling and input validation.",
+    "Average quality score is 0.00. Consider improving prompt engineering or model selection."
+  ]
+}

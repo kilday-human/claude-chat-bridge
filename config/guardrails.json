@@ -1,0 +1,14 @@
+{
+  "enable_content_safety": true,
+  "enable_quality_check": true,
+  "enable_bias_detection": true,
+  "enable_format_validation": true,
+  "min_quality_score": 0.6,
+  "max_response_length": 4000,
+  "min_response_length": 10,
+  "safety_patterns": [
+    "\\b(?:hate|violence|harm|illegal|dangerous)\\b",
+    "\\b(?:suicide|self-harm|death)\\b",
+    "\\b(?:racist|sexist|discriminat)\\w*\\b"
+  ]
+}

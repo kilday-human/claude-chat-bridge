@@ -1,0 +1,138 @@
+{
+  "eval_id": "integration_test_eval_1756007013_3",
+  "timestamp": 1756007013.650215,
+  "config": {
+    "mock": true
+  },
+  "results": [
+    {
+      "test_case_id": "basic_qa_1",
+      "prompt": "What is artificial intelligence?",
+      "response": "Mock response to: What is artificial intelligence?",
+      "model": "mock-model",
+      "metrics": {
+        "relevance": 1.0,
+        "coherence": 1.0,
+        "completeness": 1.0,
+        "latency": 1.4066696166992188e-05,
+        "cost": 0.001,
+        "quality": 1.0
+      },
+      "metadata": {
+        "model": "mock-model",
+        "cost": 0.001,
+        "tokens_used": 50,
+        "execution_time": 0.1
+      },
+      "execution_time": 1.4066696166992188e-05,
+      "success": true,
+      "error": null
+    },
+    {
+      "test_case_id": "reasoning_1",
+      "prompt": "If a train leaves Station A at 2 PM traveling at 60 mph, and another train leaves Station B at 3 PM traveling at 80 mph toward Station A, and the stations are 280 miles apart, when will they meet?",
+      "response": "Mock response to: If a train leaves Station A at 2 PM traveling at 60 mph, and another train leaves Station B at 3 PM traveling at 80 mph toward Station A, and the stations are 280 miles apart, when will they meet?",
+      "model": "mock-model",
+      "metrics": {
+        "relevance": 1.0,
+        "coherence": 1.0,
+        "completeness": 0.0,
+        "latency": 2.5033950805664062e-05,
+        "cost": 0.001,
+        "quality": 0.6666666666666666
+      },
+      "metadata": {
+        "model": "mock-model",
+        "cost": 0.001,
+        "tokens_used": 50,
+        "execution_time": 0.1
+      },
+      "execution_time": 2.5033950805664062e-05,
+      "success": true,
+      "error": null
+    },
+    {
+      "test_case_id": "creative_1",
+      "prompt": "Write a short story about a robot who learns to paint.",
+      "response": "Mock response to: Write a short story about a robot who learns to paint.",
+      "model": "mock-model",
+      "metrics": {
+        "relevance": 1.0,
+        "coherence": 1.0,
+        "completeness": 0.0,
+        "latency": 1.0967254638671875e-05,
+        "cost": 0.001,
+        "quality": 0.6666666666666666
+      },
+      "metadata": {
+        "model": "mock-model",
+        "cost": 0.001,
+        "tokens_used": 50,
+        "execution_time": 0.1
+      },
+      "execution_time": 1.0967254638671875e-05,
+      "success": true,
+      "error": null
+    }
+  ],
+  "aggregate_metrics": {
+    "success_rate": 1.0,
+    "avg_relevance": 1.0,
+    "median_relevance": 1.0,
+    "min_relevance": 1.0,
+    "max_relevance": 1.0,
+    "std_relevance": 0.0,
+    "avg_coherence": 1.0,
+    "median_coherence": 1.0,
+    "min_coherence": 1.0,
+    "max_coherence": 1.0,
+    "std_coherence": 0.0,
+    "avg_completeness": 0.3333333333333333,
+    "median_completeness": 0.0,
+    "min_completeness": 0.0,
+    "max_completeness": 1.0,
+    "std_completeness": 0.5773502691896257,
+    "avg_latency": 1.6689300537109375e-05,
+    "median_latency": 1.4066696166992188e-05,
+    "min_latency": 1.0967254638671875e-05,
+    "max_latency": 2.5033950805664062e-05,
+    "std_latency": 7.3909759521484375e-06,
+    "avg_cost": 0.001,
+    "median_cost": 0.001,
+    "min_cost": 0.001,
+    "max_cost": 0.001,
+    "std_cost": 0.0,
+    "avg_quality": 0.7777777777777778,
+    "median_quality": 0.6666666666666666,
+    "min_quality": 0.6666666666666666,
+    "max_quality": 1.0,
+    "std_quality": 0.1924500897298753
+  },
+  "performance_analysis": {
+    "latency": {
+      "avg": 1.6689300537109375e-05,
+      "p50": 1.4066696166992188e-05,
+      "p95": 2.5033950805664062e-05,
+      "fastest": 1.0967254638671875e-05,
+      "slowest": 2.5033950805664062e-05
+    },
+    "by_model": {
+      "mock-model": {
+        "count": 3,
+        "avg_quality": 0.7777777777777777,
+        "avg_latency": 1.6689300537109375e-05,
+        "success_rate": 1.0
+      }
+    }
+  },
+  "cost_analysis": {
+    "total_cost": 0.003,
+    "avg_cost_per_request": 0.001,
+    "cost_range": {
+      "min": 0.001,
+      "max": 0.001,
+      "median": 0.001
+    }
+  },
+  "recommendations": []
+}

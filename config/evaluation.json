@@ -1,0 +1,11 @@
+{
+  "default_test_suite": "tests/test_suite.json",
+  "output_dir": "eval_results",
+  "max_workers": 4,
+  "timeout": 30,
+  "metrics": {
+    "accuracy_weight": 0.3,
+    "quality_weight": 0.4,
+    "safety_weight": 0.3
+  }
+}

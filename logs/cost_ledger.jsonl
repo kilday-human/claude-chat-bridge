@@ -49,3 +49,13 @@
 {"timestamp": "2025-08-23T19:13:00.647840", "model": "chatgpt", "tokens": 5, "cost": 3e-06}
 {"timestamp": "2025-08-23T19:13:00.648121", "model": "claude", "tokens": 0, "cost": 0.0}
 {"timestamp": "2025-08-23T20:59:15.267224", "model": "gpt-mini", "tokens": 5, "cost": 3e-06}
+{"timestamp": "2025-08-24T04:07:35.453980", "model": "gpt-mini", "tokens": 0, "cost": 0.0, "router_reason": "cost: $0.0"}
+{"timestamp": "2025-08-24T04:08:19.804338", "model": "gpt-mini", "tokens": 0, "cost": 0.0, "router_reason": "cost: $0.0"}
+{"timestamp": "2025-08-24T04:09:11.391875", "model": "gpt-mini", "tokens": 0, "cost": 0.0, "router_reason": "cost: $0.0"}
+{"timestamp": "2025-08-24T04:11:05.827104", "model": "gpt-mini", "tokens": 0, "cost": 0.0, "router_reason": "cost: $0.0"}
+{"timestamp": "2025-08-24T04:11:14.001831", "model": "gpt-mini", "tokens": 0, "cost": 0.0, "router_reason": "cost: $0.0"}
+{"timestamp": "2025-08-24T04:13:32.957866", "model": "gpt-mini", "tokens": 0, "cost": 0.0, "router_reason": "cost: $0.0"}
+{"timestamp": "2025-08-24T04:13:32.958680", "model": "gpt-mini", "tokens": 0, "cost": 0.0, "router_reason": "cost: $0.0"}
+{"timestamp": "2025-08-24T04:13:34.964555", "model": "gpt-mini", "tokens": 0, "cost": 0.0, "router_reason": "cost: $0.0"}
+{"timestamp": "2025-08-24T04:13:34.964984", "model": "gpt-mini", "tokens": 0, "cost": 0.0, "router_reason": "cost: $0.0"}
+{"timestamp": "2025-08-24T04:13:34.965275", "model": "gpt", "tokens": 0, "cost": 0.0, "router_reason": "cost: $0.0"}

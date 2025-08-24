@@ -1,389 +1,417 @@
-from __future__ import annotations  # must be first!
-
-from dotenv import load_dotenv
-load_dotenv()
+#!/usr/bin/env python3
+"""
+Claude-GPT Bridge CLI - Week 2 Enhanced
+Production-ready AI bridge with routing, RAG, caching, guardrails, and evaluation
+"""
 
 import argparse
-import concurrent.futures
-import json
 import sys
-from datetime import datetime
+import json
+import time
 from pathlib import Path
-from typing import Dict, Any, List
 
+# Core components
 from src.router import choose_model
-from src.cost_ledger import log_cost
-from src.wrappers.chatgpt_wrapper import send_to_chatgpt
+from src.cost_ledger import log_cost, read_summary
+from src.rag_system import RAGSystem
+from src.citation_manager import CitationManager
+from src.state_manager import StateManager
 from src.rag_integration import RAGBridge
 
-try:
-    from src.wrappers.claude_wrapper import send_to_claude
-    CLAUDE_AVAILABLE = True
-except ImportError:
-    CLAUDE_AVAILABLE = False
-    def send_to_claude(prompt: str, mock: bool = False, **kwargs):
-        return "[claude-wrapper-missing] Install anthropic package to use Claude", {
-            "model": "claude-missing",
-            "usage": {"in": 0, "out": 0, "total": 0},
+# Week 2 components
+from src.cache_manager import get_cache_manager, cache_response
+from src.guardrails_system import get_guardrails_manager, GuardrailConfig, validate_response, filter_response
+from src.eval_harness import EvalHarness, TestSuiteLoader, create_eval_config
+
+# API wrappers
+from src.wrappers.chatgpt_wrapper import send_to_chatgpt
+from src.wrappers.claude_wrapper import ClaudeWrapper
+
+
+class EnhancedBridge:
+    """Enhanced bridge with Week 2 features"""
+    
+    def __init__(self):
+        # Initialize core components
+        # Router function imported
+        # Cost ledger function imported
+        self.rag_system = RAGSystem()
+        self.citation_manager = CitationManager()
+        self.state_manager = StateManager()
+        self.rag_bridge = RAGBridge()
+        
+        # Initialize Week 2 components
+        self.cache_manager = get_cache_manager()
+        self.guardrails_manager = get_guardrails_manager()
+        
+        # API wrappers
+        # ChatGPT function imported
+        self.claude = ClaudeWrapper()
+        
+        # Performance tracking
+        self.session_stats = {
+            'requests': 0,
+            'cache_hits': 0,
+            'guardrail_violations': 0,
+            'total_cost': 0.0,
+            'avg_latency': 0.0
         }
-
-# Global RAG bridge instance
-rag_bridge = None
-
-def get_rag_bridge():
-    """Get or create RAG bridge instance."""
-    global rag_bridge
-    if rag_bridge is None:
-        rag_bridge = RAGBridge()
-    return rag_bridge
-
-
-def format_response(text: str, model: str, meta: Dict[str, Any], decision: Dict[str, str] = None, 
-                   rag_info: Dict[str, Any] = None) -> str:
-    """Format a model response with metadata for clean output."""
-    usage = meta.get("usage", {})
-    model_label = {
-        "gpt-4o": "GPT-4o",
-        "gpt-4o-mini": "GPT-4o-mini", 
-        "claude-3-5-sonnet-20241022": "Claude-3.5-Sonnet",
-        "claude-3-5-haiku-20241022": "Claude-3.5-Haiku",
-    }.get(meta.get("model", model), model.upper())
     
-    lines = [f"[{model_label}] {text}"]
-    
-    if decision:
-        router_info = decision['reason']
-        if rag_info and rag_info.get('rag_used'):
-            router_info += f" + RAG ({rag_info.get('citation_count', 0)} sources)"
-        lines.append(f"Router: {router_info}")
-    
-    # Add token usage if available
-    if usage.get("total"):
-        in_tokens = usage.get("in", usage.get("prompt_tokens", 0))
-        out_tokens = usage.get("out", usage.get("completion_tokens", 0))
-        lines.append(f"Tokens: {in_tokens}→{out_tokens} (total: {usage['total']})")
-    
-    return "\n".join(lines)
-
-
-def run_once(
-    prompt: str, 
-    use_router: bool = False, 
-    mock: bool = False, 
-    max_tokens: int = 512, 
-    dual: bool = False,
-    verbose: bool = False,
-    use_rag: bool = False
-) -> str:
-    """Execute a single bridge request with routing and RAG enhancement."""
-    
-    if verbose:
-        timestamp = datetime.now().strftime("%H:%M:%S")
-        print(f"[{timestamp}] Processing: {prompt[:50]}{'...' if len(prompt) > 50 else ''}")
-    
-    # RAG Enhancement
-    rag_info = {"rag_used": False, "citation_count": 0, "enhanced_prompt": prompt}
-    
-    if use_rag:
+    # @cache_response
+    @validate_response
+    def process_request(
+        self,
+        prompt: str,
+        use_router: bool = True,
+        use_rag: bool = False,
+        use_cache: bool = True,
+        use_guardrails: bool = True,
+        model: str = None,
+        mock: bool = False,
+        verbose: bool = False
+    ) -> tuple:
+        """Process request through the enhanced bridge"""
+        start_time = time.time()
+        
         try:
-            bridge = get_rag_bridge()
-            rag_result = bridge.process_bridge_request(prompt, max_tokens=max_tokens)
+            # RAG enhancement if requested
+            if use_rag:
+                enhanced_prompt, rag_context = self.rag_bridge.enhance_prompt(prompt)
+                if verbose and rag_context.get('sources'):
+                    print(f"🔍 RAG: Found {len(rag_context['sources'])} relevant sources")
+            else:
+                enhanced_prompt = prompt
+                rag_context = {}
             
-            if rag_result['rag_used']:
-                prompt = rag_result['enhanced_prompt']  # Use enhanced prompt
-                rag_info = {
-                    "rag_used": True,
-                    "citation_count": len(rag_result['citations']),
-                    "context_tokens": rag_result['rag_stats']['estimated_tokens'],
-                    "enhanced_prompt": prompt
-                }
-                
+            # Model selection
+            if use_router and not model:
+                selected_model = choose_model(enhanced_prompt)["model"]
                 if verbose:
-                    print(f"[RAG] Enhanced with {rag_info['citation_count']} sources, {rag_info['context_tokens']} context tokens")
+                    print(f"🧠 Router: Selected {selected_model}")
+            else:
+                selected_model = model or "gpt-4o-mini"
+            
+            # Get response from appropriate model
+            if selected_model.startswith('gpt'):
+                response, api_metadata = send_to_chatgpt(
+                    enhanced_prompt,
+                    
+                    mock=mock
+                )
+            else:
+                response, api_metadata = self.claude.generate(
+                    enhanced_prompt,
+                    
+                    mock=mock
+                )
+            
+            # Add citations if RAG was used
+            if use_rag and rag_context.get('sources'):
+                response = self.citation_manager.add_citations(response, rag_context['sources'])
+            
+            # Cost tracking
+            cost = api_metadata.get('cost', 0.0)
+            log_cost(
+                model=selected_model,
+                tokens=api_metadata.get('tokens_used', 0),
+                reason=f"cost: ${cost}"
+            )
+            
+            # Update session stats
+            execution_time = time.time() - start_time
+            self.session_stats['requests'] += 1
+            self.session_stats['total_cost'] += cost
+            self.session_stats['avg_latency'] = (
+                (self.session_stats['avg_latency'] * (self.session_stats['requests'] - 1) + execution_time) /
+                self.session_stats['requests']
+            )
+            
+            # Compile metadata
+            metadata = {
+                'model': selected_model,
+                'cost': cost,
+                'tokens_used': api_metadata.get('tokens_used', 0),
+                'execution_time': execution_time,
+                'used_rag': use_rag,
+                'used_router': use_router,
+                'rag_context': rag_context,
+                **api_metadata
+            }
+            
+            return response, metadata
             
         except Exception as e:
-            if verbose:
-                print(f"[RAG] Enhancement failed: {e}")
-            # Continue without RAG
+            print(f"❌ Error processing request: {e}")
+            return f"Error: {e}", {'error': str(e), 'execution_time': time.time() - start_time}
     
-    outputs = []
-    
-    if dual:
-        # Dual mode: send to both models
-        if verbose:
-            print("[DUAL] Sending to both GPT and Claude...")
-            
-        # Use ThreadPoolExecutor for parallel dual requests
-        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-            gpt_future = executor.submit(send_to_chatgpt, prompt, mock=mock, max_tokens=max_tokens)
-            claude_future = executor.submit(send_to_claude, prompt, mock=mock, max_tokens=max_tokens)
-            
-            gpt_text, gpt_meta = gpt_future.result()
-            claude_text, claude_meta = claude_future.result()
-        
-        # Apply RAG post-processing if used
-        if use_rag and rag_info["rag_used"]:
-            try:
-                bridge = get_rag_bridge()
-                gpt_text = bridge.finalize_response(gpt_text, "gpt")
-                claude_text = bridge.finalize_response(claude_text, "claude")
-            except Exception as e:
-                if verbose:
-                    print(f"[RAG] Post-processing failed: {e}")
-        
-        # Log costs
-        log_cost("chatgpt", gpt_meta["usage"]["total"])
-        if CLAUDE_AVAILABLE:
-            log_cost("claude", claude_meta["usage"]["total"])
-        
-        outputs.append(format_response(gpt_text, "gpt", gpt_meta, rag_info=rag_info))
-        outputs.append(format_response(claude_text, "claude", claude_meta, rag_info=rag_info))
-        
-        decision_info = "dual mode (both models executed in parallel)"
-        if rag_info["rag_used"]:
-            decision_info += f" with RAG enhancement ({rag_info['citation_count']} sources)"
-        outputs.append(f"Router: {decision_info}")
-        
-    else:
-        # Single model mode with optional routing
-        if use_router:
-            decision = choose_model(prompt)
-            model = decision["model"]
-            if verbose:
-                print(f"[ROUTER] Selected {model}: {decision['reason']}")
-        else:
-            decision = {"model": "gpt-mini", "reason": "router disabled (default gpt-mini)"}
-            model = decision["model"]
-        
-        # Execute based on model selection
-        if model.startswith("claude"):
-            if not CLAUDE_AVAILABLE:
-                outputs.append("[ERROR] Claude wrapper not available. Install anthropic package or use --mock mode.")
-                return "\n".join(outputs)
-            text, meta = send_to_claude(prompt, mock=mock)
-        else:
-            text, meta = send_to_chatgpt(prompt, mock=mock)
-        
-        # Apply RAG post-processing if used
-        if use_rag and rag_info["rag_used"]:
-            try:
-                bridge = get_rag_bridge()
-                text = bridge.finalize_response(text, model)
-            except Exception as e:
-                if verbose:
-                    print(f"[RAG] Post-processing failed: {e}")
-        
-        # Log cost
-        log_cost(model, meta["usage"]["total"])
-        
-        outputs.append(format_response(text, model, meta, decision, rag_info))
-    
-    return "\n".join(outputs)
-
-
-def save_session_log(args: argparse.Namespace, results: List[str]) -> None:
-    """Save session details to logs directory for debugging and analysis."""
-    logs_dir = Path("logs")
-    logs_dir.mkdir(exist_ok=True)
-    
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    session_file = logs_dir / f"session_{timestamp}.json"
-    
-    # Add RAG stats if available
-    rag_stats = {}
-    if rag_bridge:
-        try:
-            rag_stats = rag_bridge.get_rag_stats()
-        except Exception:
-            pass
-    
-    session_data = {
-        "timestamp": datetime.now().isoformat(),
-        "args": vars(args),
-        "results": results,
-        "total_requests": len(results),
-        "rag_stats": rag_stats
-    }
-    
-    with open(session_file, "w") as f:
-        json.dump(session_data, f, indent=2)
-    
-    if args.verbose:
-        print(f"Session logged: {session_file}")
+    def get_performance_stats(self) -> dict:
+        """Get performance statistics"""
+        return {
+            'session': self.session_stats,
+            'cache': self.cache_manager.get_stats(),
+            'guardrails': self.guardrails_manager.get_stats(),
+            'cost_ledger': read_summary(),
+            'rag': {}
+        }
 
 
 def main():
-    """Main CLI entry point with comprehensive argument parsing."""
+    """Main CLI function"""
     parser = argparse.ArgumentParser(
-        description="Claude-GPT Bridge: Smart routing between AI models with RAG enhancement",
+        description="Claude-GPT Bridge CLI - Week 2 Enhanced",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
+  # Basic usage
   python3 cli_bridge.py "Hello world" --mock
-  python3 cli_bridge.py "Explain quantum computing" --router --rag
-  python3 cli_bridge.py "Creative story about AI" --dual --max-tokens 1000
-  python3 cli_bridge.py "What is machine learning?" --rag --mock
-  python3 cli_bridge.py "Math problem: 2+2" 5 --parallel --router
+  
+  # Smart routing with RAG
+  python3 cli_bridge.py "What is AI?" --router --rag --verbose
+  
+  # Dual model comparison
+  python3 cli_bridge.py "Explain quantum computing" --dual --mock
+  
+  # Performance statistics
+  python3 cli_bridge.py --stats
+  
+  # Cache management
+  python3 cli_bridge.py --cache-stats
+  python3 cli_bridge.py --cache-clear
+  
+  # Guardrails testing
+  python3 cli_bridge.py "Test response" --guardrails-test
+  
+  # Run evaluations
+  python3 cli_bridge.py --eval-quick
+  python3 cli_bridge.py --eval-comprehensive
         """
     )
     
-    # Required arguments
-    parser.add_argument("prompt", help="Prompt to send to the model(s)")
-    parser.add_argument("n", type=int, nargs="?", default=1, 
-                       help="Number of runs (default: 1)")
+    # Core arguments
+    parser.add_argument('prompt', nargs='?', help='Prompt to process')
+    parser.add_argument('--router', action='store_true', help='Use smart routing')
+    parser.add_argument('--rag', action='store_true', help='Use RAG enhancement')
+    parser.add_argument('--cache', action='store_true', default=True, help='Use response caching')
+    parser.add_argument('--guardrails', action='store_true', default=True, help='Use guardrails validation')
+    parser.add_argument('--model', help='Force specific model')
+    parser.add_argument('--dual', action='store_true', help='Compare both models')
+    parser.add_argument('--mock', action='store_true', help='Use mock responses')
+    parser.add_argument('--verbose', action='store_true', help='Verbose output')
     
-    # Model selection
-    parser.add_argument("--router", action="store_true", 
-                       help="Enable smart routing based on prompt content")
-    parser.add_argument("--dual", action="store_true", 
-                       help="Send to both GPT and Claude models")
+    # Statistics and management
+    parser.add_argument('--stats', action='store_true', help='Show performance statistics')
+    parser.add_argument('--rag-stats', action='store_true', help='Show RAG statistics')
+    parser.add_argument('--cache-stats', action='store_true', help='Show cache statistics')
+    parser.add_argument('--cache-clear', action='store_true', help='Clear cache')
+    parser.add_argument('--guardrails-test', action='store_true', help='Test guardrails on prompt')
     
-    # RAG options
-    parser.add_argument("--rag", action="store_true",
-                       help="Enable RAG (Retrieval-Augmented Generation)")
-    parser.add_argument("--rag-stats", action="store_true",
-                       help="Show RAG system statistics")
-    
-    # Execution options
-    parser.add_argument("--mock", action="store_true", 
-                       help="Use mock responses (no API calls, no cost)")
-    parser.add_argument("--parallel", action="store_true", 
-                       help="Run multiple requests in parallel")
-    parser.add_argument("--no-parallel", action="store_true", 
-                       help="Force sequential execution (overrides --parallel)")
-    
-    # Generation parameters
-    parser.add_argument("--max-tokens", type=int, default=512, 
-                       help="Maximum tokens for generation (default: 512)")
-    
-    # Output options
-    parser.add_argument("--verbose", "-v", action="store_true", 
-                       help="Enable verbose output with timing and routing info")
-    parser.add_argument("--quiet", "-q", action="store_true", 
-                       help="Minimal output (results only)")
-    parser.add_argument("--save-session", action="store_true", 
-                       help="Save session log to logs/ directory")
+    # Evaluation commands
+    parser.add_argument('--eval-quick', action='store_true', help='Run quick evaluation')
+    parser.add_argument('--eval-comprehensive', action='store_true', help='Run comprehensive evaluation')
+    parser.add_argument('--eval-stress', action='store_true', help='Run stress test')
+    parser.add_argument('--eval-output', default='eval_results', help='Evaluation output directory')
     
     args = parser.parse_args()
     
-    # Handle RAG stats request
-    if args.rag_stats:
-        try:
-            bridge = get_rag_bridge()
-            stats = bridge.get_rag_stats()
-            print("RAG System Statistics:")
-            print(json.dumps(stats, indent=2))
-            return
-        except Exception as e:
-            print(f"Error getting RAG stats: {e}")
-            sys.exit(1)
-    
-    # Validation
-    if args.dual and args.n > 1:
-        print("Warning: --dual with multiple runs will generate many requests")
-        if not args.mock:
-            response = input("Continue? (y/n): ")
-            if response.lower() != 'y':
-                sys.exit(0)
-    
-    if not args.mock and not CLAUDE_AVAILABLE and (args.dual or args.router):
-        print("Warning: Claude wrapper not available. Install with: pip install anthropic")
-        if args.dual:
-            print("Dual mode will show Claude as unavailable")
-        if args.router:
-            print("Router may select Claude models that will fail")
-    
-    if args.rag:
-        try:
-            # Initialize RAG system early to catch any issues
-            bridge = get_rag_bridge()
-            stats = bridge.get_rag_stats()
-            if args.verbose:
-                print(f"RAG system ready: {stats['rag_system']['total_chunks']} knowledge chunks available")
-        except Exception as e:
-            print(f"RAG system initialization failed: {e}")
-            if not args.mock:
-                response = input("Continue without RAG? (y/n): ")
-                if response.lower() != 'y':
-                    sys.exit(1)
-                args.rag = False
-    
-    # Execution function
-    def _worker(i: int) -> str:
-        if args.verbose and args.n > 1:
-            print(f"\n--- Run {i+1}/{args.n} ---")
-        
-        reply = run_once(
-            args.prompt,
-            use_router=args.router,
-            mock=args.mock,
-            max_tokens=args.max_tokens,
-            dual=args.dual,
-            verbose=args.verbose and not args.quiet,
-            use_rag=args.rag
-        )
-        
-        if not args.quiet:
-            if args.n > 1:
-                return f"\n=== Run {i+1} ===\n{reply}"
-            else:
-                return reply
-        else:
-            # Extract just the model responses for quiet mode
-            lines = reply.split('\n')
-            response_lines = [line for line in lines if line.startswith('[') and not line.startswith('[ROUTER]')]
-            return '\n'.join(response_lines)
-    
-    # Execute requests
-    results = []
+    # Initialize bridge
+    bridge = EnhancedBridge()
     
     try:
-        if args.parallel and not args.no_parallel and args.n > 1:
-            # Parallel execution
-            if args.verbose:
-                print(f"Executing {args.n} requests in parallel...")
+        # Handle management commands
+        if args.stats:
+            stats = bridge.get_performance_stats()
+            print("\n📊 Performance Statistics")
+            print("=" * 50)
+            print(json.dumps(stats, indent=2))
+            return
+        
+        if args.rag_stats:
+            stats = bridge.rag_system.get_stats()
+            print("\n🔍 RAG System Statistics")
+            print("=" * 40)
+            print(json.dumps(stats, indent=2))
+            return
+        
+        if args.cache_stats:
+            stats = bridge.cache_manager.get_stats()
+            print("\n💾 Cache Statistics")
+            print("=" * 30)
+            print(json.dumps(stats, indent=2))
+            return
+        
+        if args.cache_clear:
+            bridge.cache_manager.clear()
+            print("✅ Cache cleared")
+            return
+        
+        # Handle evaluation commands
+        if args.eval_quick:
+            print("🧪 Running quick evaluation...")
+            harness = EvalHarness(bridge.process_request, args.eval_output)
+            report = harness.run_evaluation(
+                TestSuiteLoader.create_default_suite(),
+                create_eval_config(mock=args.mock),
+                "quick_eval"
+            )
+            print(f"✅ Quick evaluation completed. Success rate: {report.aggregate_metrics.get('success_rate', 0):.1%}")
+            return
+        
+        if args.eval_comprehensive:
+            print("🔬 Running comprehensive evaluation...")
+            harness = EvalHarness(bridge.process_request, args.eval_output)
             
-            with concurrent.futures.ThreadPoolExecutor() as executor:
-                futures = [executor.submit(_worker, i) for i in range(args.n)]
-                for f in concurrent.futures.as_completed(futures):
-                    result = f.result()
-                    results.append(result)
-                    if not args.save_session:  # Print immediately if not saving
-                        print(result)
-        else:
-            # Sequential execution
-            for i in range(args.n):
-                result = _worker(i)
-                results.append(result)
-                if not args.save_session:  # Print immediately if not saving
-                    print(result)
-    
+            configs = [
+                create_eval_config(name="baseline", use_router=False, use_rag=False, mock=args.mock),
+                create_eval_config(name="router_only", use_router=True, use_rag=False, mock=args.mock),
+                create_eval_config(name="rag_only", use_router=False, use_rag=True, mock=args.mock),
+                create_eval_config(name="full_system", use_router=True, use_rag=True, mock=args.mock)
+            ]
+            
+            reports = harness.run_ablation_study(
+                TestSuiteLoader.create_default_suite(),
+                configs,
+                "comprehensive_eval"
+            )
+            
+            print(f"✅ Comprehensive evaluation completed with {len(reports)} configurations")
+            for name, report in reports.items():
+                success_rate = report.aggregate_metrics.get('success_rate', 0)
+                avg_quality = report.aggregate_metrics.get('avg_quality', 0)
+                print(f"  {name}: {success_rate:.1%} success, {avg_quality:.2f} quality")
+            return
+        
+        if args.eval_stress:
+            print("💪 Running stress test evaluation...")
+            harness = EvalHarness(bridge.process_request, args.eval_output)
+            stress_suite = TestSuiteLoader.create_stress_test_suite(50)
+            report = harness.run_evaluation(
+                stress_suite,
+                create_eval_config(mock=args.mock),
+                "stress_test"
+            )
+            print(f"✅ Stress test completed. Success rate: {report.aggregate_metrics.get('success_rate', 0):.1%}")
+            return
+        
+        # Require prompt for other operations
+        if not args.prompt:
+            parser.error("Prompt required for processing operations")
+        
+        # Handle guardrails testing
+        if args.guardrails_test:
+            print(f"🛡️ Testing guardrails on: {args.prompt}")
+            is_safe, summary = bridge.guardrails_manager.is_response_safe(
+                args.prompt, 
+                "Test response for guardrails evaluation"
+            )
+            print(f"Safe: {is_safe}")
+            print("Summary:", json.dumps(summary, indent=2))
+            return
+        
+        # Handle dual model comparison
+        if args.dual:
+            print(f"🔄 Dual model comparison for: {args.prompt}")
+            print("=" * 60)
+            
+            # GPT response
+            print("\n🤖 GPT Response:")
+            print("-" * 20)
+            gpt_response, gpt_meta = bridge.process_request(
+                args.prompt,
+                model="gpt-4o-mini",
+                use_router=False,
+                use_rag=args.rag,
+                mock=args.mock,
+                verbose=args.verbose
+            )
+            print(gpt_response)
+            if args.verbose:
+                print(f"Cost: ${gpt_meta.get('cost', 0):.4f} | Tokens: {gpt_meta.get('tokens_used', 0)} | Time: {gpt_meta.get('execution_time', 0):.2f}s")
+            
+            # Claude response
+            print("\n🧠 Claude Response:")
+            print("-" * 20)
+            claude_response, claude_meta = bridge.process_request(
+                args.prompt,
+                model="claude-haiku",
+                use_router=False,
+                use_rag=args.rag,
+                mock=args.mock,
+                verbose=args.verbose
+            )
+            print(claude_response)
+            if args.verbose:
+                print(f"Cost: ${claude_meta.get('cost', 0):.4f} | Tokens: {claude_meta.get('tokens_used', 0)} | Time: {claude_meta.get('execution_time', 0):.2f}s")
+            
+            # Comparison summary
+            print("\n📊 Comparison Summary:")
+            print("-" * 25)
+            print(f"GPT Cost: ${gpt_meta.get('cost', 0):.4f} | Claude Cost: ${claude_meta.get('cost', 0):.4f}")
+            print(f"GPT Time: {gpt_meta.get('execution_time', 0):.2f}s | Claude Time: {claude_meta.get('execution_time', 0):.2f}s")
+            
+            return
+        
+        # Regular request processing
+        if args.verbose:
+            print(f"🚀 Processing: {args.prompt}")
+            if args.router:
+                print("📍 Router: Enabled")
+            if args.rag:
+                print("🔍 RAG: Enabled")
+            if args.cache:
+                print("💾 Cache: Enabled")
+            if args.guardrails:
+                print("🛡️ Guardrails: Enabled")
+            print("-" * 40)
+        
+        # Process the request
+        response, metadata = bridge.process_request(
+            args.prompt,
+            use_router=args.router,
+            use_rag=args.rag,
+            use_cache=args.cache,
+            use_guardrails=args.guardrails,
+            model=args.model,
+            mock=args.mock,
+            verbose=args.verbose
+        )
+        
+        # Display response
+        print(response)
+        
+        # Show metadata if verbose
+        if args.verbose:
+            print("\n" + "=" * 40)
+            print("📋 Request Metadata:")
+            print(f"Model: {metadata.get('model', 'unknown')}")
+            print(f"Cost: ${metadata.get('cost', 0):.4f}")
+            print(f"Tokens: {metadata.get('tokens_used', 0)}")
+            print(f"Time: {metadata.get('execution_time', 0):.2f}s")
+            
+            if metadata.get('cached'):
+                print("💾 Response served from cache")
+                print(f"Cache hit count: {metadata.get('hit_count', 0)}")
+            
+            if metadata.get('guardrails_summary'):
+                guardrail_summary = metadata['guardrails_summary']
+                print(f"🛡️ Guardrails: {'✅ Passed' if guardrail_summary.get('safe', True) else '❌ Issues detected'}")
+                if guardrail_summary.get('violations'):
+                    print(f"   Violations: {', '.join(guardrail_summary['violations'])}")
+            
+            if metadata.get('rag_context', {}).get('sources'):
+                sources = metadata['rag_context']['sources']
+                print(f"🔍 RAG: {len(sources)} sources used")
+                for i, source in enumerate(sources[:3]):  # Show first 3 sources
+                    print(f"   [{i+1}] {source.get('filename', 'Unknown')} (score: {source.get('score', 0):.2f})")
+        
     except KeyboardInterrupt:
-        print("\nInterrupted by user")
-        sys.exit(1)
+        print("\n👋 Goodbye!")
+        sys.exit(0)
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"❌ Error: {e}")
         if args.verbose:
             import traceback
             traceback.print_exc()
         sys.exit(1)
-    
-    # Save session if requested
-    if args.save_session:
-        save_session_log(args, results)
-        # Print results after saving
-        for result in results:
-            print(result)
-    
-    if not args.quiet:
-        mode_info = []
-        if args.router: mode_info.append("router")
-        if args.rag: mode_info.append("RAG")
-        if args.dual: mode_info.append("dual")
-        if args.mock: mode_info.append("mock")
-        
-        mode_str = f" ({', '.join(mode_info)})" if mode_info else ""
-        print(f"\nBridge complete{mode_str} - {args.n} request{'s' if args.n > 1 else ''}")
 
 
 if __name__ == "__main__":

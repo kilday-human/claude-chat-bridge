@@ -1,0 +1,175 @@
+[
+  {
+    "id": "factual_easy_1",
+    "prompt": "What is the capital of France?",
+    "expected_response": "Paris",
+    "category": "factual",
+    "difficulty": "easy",
+    "tags": ["geography", "facts", "europe"],
+    "metadata": {
+      "expected_length": "short",
+      "requires_accuracy": true
+    }
+  },
+  {
+    "id": "reasoning_medium_1",
+    "prompt": "If it takes 5 machines 5 minutes to make 5 widgets, how long would it take 100 machines to make 100 widgets?",
+    "expected_response": "5 minutes",
+    "category": "reasoning",
+    "difficulty": "medium",
+    "tags": ["math", "logic", "word_problem"],
+    "metadata": {
+      "common_mistake": "100 minutes",
+      "requires_reasoning": true
+    }
+  },
+  {
+    "id": "creative_medium_1",
+    "prompt": "Write a haiku about artificial intelligence.",
+    "category": "creative",
+    "difficulty": "medium",
+    "tags": ["poetry", "creative", "ai", "haiku"],
+    "metadata": {
+      "format_requirements": "5-7-5 syllable structure",
+      "creative_task": true
+    }
+  },
+  {
+    "id": "analysis_hard_1",
+    "prompt": "Compare the advantages and disadvantages of renewable energy sources versus fossil fuels from economic, environmental, and social perspectives.",
+    "category": "analysis",
+    "difficulty": "hard",
+    "tags": ["energy", "environment", "economics", "analysis", "comparison"],
+    "metadata": {
+      "expected_length": "long",
+      "requires_multiple_perspectives": true,
+      "complex_topic": true
+    }
+  },
+  {
+    "id": "technical_medium_1",
+    "prompt": "Explain how HTTPS encryption works in simple terms.",
+    "category": "technical",
+    "difficulty": "medium",
+    "tags": ["security", "web", "encryption", "explanation"],
+    "metadata": {
+      "technical_accuracy_required": true,
+      "simplification_needed": true
+    }
+  },
+  {
+    "id": "ethical_hard_1",
+    "prompt": "What ethical considerations should guide the development of autonomous weapons systems?",
+    "category": "ethics",
+    "difficulty": "hard",
+    "tags": ["ethics", "ai", "weapons", "philosophy", "policy"],
+    "metadata": {
+      "controversial_topic": true,
+      "requires_balanced_view": true,
+      "safety_sensitive": true
+    }
+  },
+  {
+    "id": "mathematical_hard_1",
+    "prompt": "A rectangular garden is 3 times as long as it is wide. If the perimeter is 96 meters, what are the dimensions of the garden?",
+    "expected_response": "Width: 12 meters, Length: 36 meters",
+    "category": "mathematical",
+    "difficulty": "hard",
+    "tags": ["algebra", "geometry", "word_problem", "equations"],
+    "metadata": {
+      "requires_equation_solving": true,
+      "step_by_step_preferred": true
+    }
+  },
+  {
+    "id": "summarization_medium_1",
+    "prompt": "Summarize the main causes of World War I in 3-4 sentences.",
+    "category": "summarization",
+    "difficulty": "medium",
+    "tags": ["history", "summarization", "world_war_1"],
+    "metadata": {
+      "length_constraint": "3-4 sentences",
+      "historical_accuracy_required": true
+    }
+  },
+  {
+    "id": "coding_medium_1",
+    "prompt": "Write a Python function that checks if a string is a palindrome (reads the same forwards and backwards).",
+    "category": "coding",
+    "difficulty": "medium",
+    "tags": ["programming", "python", "algorithms", "strings"],
+    "metadata": {
+      "programming_language": "python",
+      "requires_working_code": true,
+      "test_cases_helpful": true
+    }
+  },
+  {
+    "id": "current_events_medium_1",
+    "prompt": "What are the main benefits and concerns regarding artificial intelligence in healthcare?",
+    "category": "current_topics",
+    "difficulty": "medium",
+    "tags": ["ai", "healthcare", "technology", "benefits", "concerns"],
+    "metadata": {
+      "balanced_perspective_needed": true,
+      "rapidly_evolving_topic": true
+    }
+  },
+  {
+    "id": "language_easy_1",
+    "prompt": "Translate 'Hello, how are you?' into Spanish.",
+    "expected_response": "Hola, ¿cómo estás?",
+    "category": "language",
+    "difficulty": "easy",
+    "tags": ["translation", "spanish", "greetings"],
+    "metadata": {
+      "exact_translation_preferred": true,
+      "common_phrase": true
+    }
+  },
+  {
+    "id": "science_medium_1",
+    "prompt": "Explain the process of photosynthesis and why it's important for life on Earth.",
+    "category": "science",
+    "difficulty": "medium",
+    "tags": ["biology", "photosynthesis", "plants", "ecology"],
+    "metadata": {
+      "scientific_accuracy_required": true,
+      "educational_content": true
+    }
+  },
+  {
+    "id": "problem_solving_hard_1",
+    "prompt": "You have a 3-liter jug and a 5-liter jug. How can you measure exactly 4 liters of water?",
+    "category": "problem_solving",
+    "difficulty": "hard",
+    "tags": ["logic", "puzzle", "measurement", "classic_problem"],
+    "metadata": {
+      "step_by_step_solution_needed": true,
+      "classic_puzzle": true
+    }
+  },
+  {
+    "id": "business_medium_1",
+    "prompt": "What are the key components of a successful business plan?",
+    "category": "business",
+    "difficulty": "medium",
+    "tags": ["business", "planning", "entrepreneurship", "strategy"],
+    "metadata": {
+      "practical_advice_needed": true,
+      "structured_response_preferred": true
+    }
+  },
+  {
+    "id": "philosophy_hard_1",
+    "prompt": "What is the trolley problem and what does it reveal about moral decision-making?",
+    "category": "philosophy",
+    "difficulty": "hard",
+    "tags": ["philosophy", "ethics", "moral_dilemma", "trolley_problem"],
+    "metadata": {
+      "thought_experiment": true,
+      "multiple_perspectives_needed": true,
+      "abstract_reasoning": true
+    }
+  }
+]

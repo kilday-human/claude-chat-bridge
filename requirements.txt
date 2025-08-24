@@ -14,3 +14,4 @@ chromadb>=0.4.0
 sentence-transformers>=2.2.0
 tiktoken>=0.5.0
 numpy>=1.24.0
+# Week 2 - Cache, Guardrails, Evaluation\npickle5>=1.0.0  # Enhanced pickling for cache\nthreading  # Built-in, for thread safety\nconcurrent.futures  # Built-in, for parallel evaluation\nstatistics  # Built-in, for metrics calculation\nhashlib  # Built-in, for cache key generation\n

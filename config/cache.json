@@ -1,0 +1,6 @@
+{
+  "max_memory_size": 100,
+  "max_disk_size": 1000,
+  "default_ttl": 3600,
+  "cache_dir": "data/cache"
+}
