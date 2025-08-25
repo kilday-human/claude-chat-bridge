@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 """
-Claude-GPT Bridge CLI - Week 2 Enhanced
-Production-ready AI bridge with routing, RAG, caching, guardrails, and evaluation
+Claude-GPT Bridge CLI - Production Rewrite
+Clean architecture with proper execution flow for Week 2 systems
 """
 
 import argparse
 import sys
 import json
 import time
+import asyncio
 from pathlib import Path
+from typing import Dict, Any, Tuple, Optional
 
 # Core components
 from src.router import choose_model
@@ -19,9 +21,9 @@ from src.state_manager import StateManager
 from src.rag_integration import RAGBridge
 
 # Week 2 components
-from src.cache_manager import get_cache_manager, cache_response
-from src.guardrails_system import get_guardrails_manager, GuardrailConfig, validate_response, filter_response
-from src.eval_harness import EvalHarness, TestSuiteLoader, create_eval_config
+from src.cache_manager import create_cache_manager
+from src.guardrails_system import create_guardrails_system
+from src.eval_harness import *
 
 # API wrappers
 from src.wrappers.chatgpt_wrapper import send_to_chatgpt
@@ -29,36 +31,42 @@ from src.wrappers.claude_wrapper import ClaudeWrapper
 
 
 class EnhancedBridge:
-    """Enhanced bridge with Week 2 features"""
+    """Production-ready AI bridge with Week 2 systems"""
     
     def __init__(self):
-        # Initialize core components
-        # Router function imported
-        # Cost ledger function imported
+        print("🚀 Initializing Enhanced Bridge...")
+        
+        # Core components
         self.rag_system = RAGSystem()
         self.citation_manager = CitationManager()
         self.state_manager = StateManager()
         self.rag_bridge = RAGBridge()
         
-        # Initialize Week 2 components
-        self.cache_manager = get_cache_manager()
-        self.guardrails_manager = get_guardrails_manager()
+        # Week 2 components
+        self.cache_manager = create_cache_manager()
+        self.guardrails_manager = create_guardrails_system()
+        
+        # Configure guardrails for production (smart thresholds)
+        self.guardrails_manager.update_thresholds(
+            min_quality_score=0.3,  # More lenient for short responses
+            min_safety_score=0.8,   # Keep safety strict
+            min_bias_score=0.7      # Keep bias detection active
+        )
         
         # API wrappers
-        # ChatGPT function imported
         self.claude = ClaudeWrapper()
         
-        # Performance tracking
+        # Statistics
         self.session_stats = {
             'requests': 0,
             'cache_hits': 0,
-            'guardrail_violations': 0,
+            'guardrail_blocks': 0,
             'total_cost': 0.0,
             'avg_latency': 0.0
         }
+        
+        print("✅ All systems initialized successfully")
     
-    # @cache_response
-    @validate_response
     def process_request(
         self,
         prompt: str,
@@ -69,299 +77,615 @@ class EnhancedBridge:
         model: str = None,
         mock: bool = False,
         verbose: bool = False
-    ) -> tuple:
-        """Process request through the enhanced bridge"""
+    ) -> Tuple[str, Dict[str, Any]]:
+        """
+        Production-ready request processing with proper execution flow
+        
+        Flow: Input Validation → Cache Check → Generation → Validation → Cache Store
+        """
         start_time = time.time()
         
         try:
-            # RAG enhancement if requested
+            # =================================================================
+            # STEP 1: INPUT VALIDATION
+            # =================================================================
+            if not prompt or not prompt.strip():
+                return self._error_response("Empty prompt provided", start_time)
+            
+            # Basic input guardrails (if enabled)
+            if use_guardrails:
+                prompt_result = self.guardrails_manager.evaluate_prompt(prompt)
+                if not prompt_result.passed:
+                    if verbose:
+                        print("🛡️ Prompt failed input validation")
+                    return self._error_response(
+                        "Input validation failed - please rephrase your request",
+                        start_time,
+                        {'guardrails_result': prompt_result}
+                    )
+            
+            # =================================================================
+            # STEP 2: CACHE CHECK
+            # =================================================================
+            cache_hit = False
+            cache_data = None
+            
+            if use_cache:
+                cache_result = self.cache_manager.get(prompt, model or "gpt-4o-mini")
+                cached_data, cache_hit, cache_level = cache_result
+                if cache_hit:
+                    cache_data = cached_data                    
+                    if verbose:
+                        print("💾 Cache HIT - validating cached response...")
+                    
+                    # Validate cached response with guardrails
+                    if use_guardrails:
+                        cached_response = cached_data['response'] if cached_data else ''
+                        cached_model = cached_data['model'] if cached_data else 'cached'
+                        
+                        cache_validation = self.guardrails_manager.evaluate_response(
+                            cached_response, prompt, cached_model
+                        )
+                        
+                        if cache_validation.passed:
+                            # Return valid cached response
+                            execution_time = time.time() - start_time
+                            self.session_stats['cache_hits'] += 1
+                            self._update_session_stats(execution_time, cached_data['cost'] if cached_data and 'cost' in cached_data else 0)
+                            
+                            return cached_response, {
+                                'model': cached_model,
+                                'cost': cached_data['cost'] if cached_data and 'cost' in cached_data else 0,
+                                'tokens_used': cached_data['tokens_used'] if cached_data and 'tokens_used'in cached_data else 0,
+                                'execution_time': execution_time,
+                                'cache_hit': True,
+                                'cache_level': 'memory',
+                                'guardrails_passed': True,
+                                'guardrails_result': cache_validation,
+                                'from_cache': True
+                            }
+                        else:
+                            if verbose:
+                                print("🛡️ Cached response failed validation - regenerating...")
+                            cache_hit = False  # Invalidate bad cache
+            
+            if not cache_hit and verbose:
+                print("💾 Cache MISS - generating new response...")
+            
+            # =================================================================
+            # STEP 3: RAG ENHANCEMENT (if enabled)
+            # =================================================================
+            rag_context = {}
             if use_rag:
+                if verbose:
+                    print("🔍 Enhancing with RAG...")
                 enhanced_prompt, rag_context = self.rag_bridge.enhance_prompt(prompt)
                 if verbose and rag_context.get('sources'):
                     print(f"🔍 RAG: Found {len(rag_context['sources'])} relevant sources")
             else:
                 enhanced_prompt = prompt
-                rag_context = {}
             
-            # Model selection
-            if use_router and not model:
-                selected_model = choose_model(enhanced_prompt)["model"]
+            # =================================================================
+            # STEP 4: MODEL SELECTION
+            # =================================================================
+            if model:
+                selected_model = model
                 if verbose:
-                    print(f"🧠 Router: Selected {selected_model}")
+                    print(f"🎯 Using forced model: {selected_model}")
+            elif use_router:
+                router_result = choose_model(enhanced_prompt)
+                selected_model = router_result["model"]
+                if verbose:
+                    print(f"🧠 Router selected: {selected_model}")
             else:
-                selected_model = model or "gpt-4o-mini"
+                selected_model = "gpt-4o-mini"  # Default
+                if verbose:
+                    print(f"🎯 Using default model: {selected_model}")
             
-            # Get response from appropriate model
-            if selected_model.startswith('gpt'):
-                response, api_metadata = send_to_chatgpt(
-                    enhanced_prompt,
-                    
-                    mock=mock
-                )
+            # =================================================================
+            # STEP 5: RESPONSE GENERATION
+            # =================================================================
+            if verbose:
+                print(f"⚡ Generating response with {selected_model}...")
+            
+            if mock:
+                # Create realistic mock response based on prompt length and type
+                response = self._generate_mock_response(prompt, selected_model)
+                api_metadata = {
+                    'cost': 0.001,
+                    'tokens_used': len(enhanced_prompt.split()) + len(response.split()),
+                    'model': selected_model,
+                    'mock': True
+                }
             else:
-                response, api_metadata = self.claude.generate(
-                    enhanced_prompt,
-                    
-                    mock=mock
-                )
+                # Real API call
+                if selected_model.startswith('gpt'):
+                    response, api_metadata = send_to_chatgpt(enhanced_prompt, mock=False)
+                else:
+                    response, api_metadata = self.claude.generate(enhanced_prompt, mock=False)
+                
+                api_metadata['model'] = selected_model
             
-            # Add citations if RAG was used
+            if verbose:
+                print(f"✅ Response generated ({len(response)} characters)")
+            
+            # =================================================================
+            # STEP 6: ADD CITATIONS (if RAG was used)
+            # =================================================================
             if use_rag and rag_context.get('sources'):
                 response = self.citation_manager.add_citations(response, rag_context['sources'])
+                if verbose:
+                    print(f"📝 Added citations from {len(rag_context['sources'])} sources")
             
-            # Cost tracking
+            # =================================================================
+            # STEP 7: RESPONSE VALIDATION (Smart Guardrails)
+            # =================================================================
+            guardrails_passed = True
+            guardrails_result = None
+            
+            if use_guardrails:
+                if verbose:
+                    print("🛡️ Validating response with guardrails...")
+                
+                # Smart quality scoring based on prompt type and length
+                guardrails_result = self._smart_guardrails_check(
+                    response, prompt, selected_model
+                )
+                guardrails_passed = guardrails_result.passed
+                
+                if not guardrails_passed:
+                    self.session_stats['guardrail_blocks'] += 1
+                    if verbose:
+                        print(f"🛡️ Response blocked: {len(guardrails_result.violations)} violations")
+                        for v in guardrails_result.violations[:3]:  # Show first 3
+                            print(f"   - {v.rule_name}")
+                    
+                    execution_time = time.time() - start_time
+                    return self._error_response(
+                        "I cannot provide that response due to content policy restrictions.",
+                        start_time,
+                        {
+                            'guardrails_failed': True,
+                            'guardrails_result': guardrails_result,
+                            'model': selected_model
+                        }
+                    )
+                
+                if verbose:
+                    print(f"🛡️ Guardrails passed (score: {guardrails_result.overall_score:.2f})")
+            
+            # =================================================================
+            # STEP 8: COST TRACKING
+            # =================================================================
             cost = api_metadata.get('cost', 0.0)
-            log_cost(
-                model=selected_model,
-                tokens=api_metadata.get('tokens_used', 0),
-                reason=f"cost: ${cost}"
-            )
+            tokens_used = api_metadata.get('tokens_used', 0)
             
-            # Update session stats
+            if not mock:
+                log_cost(
+                    model=selected_model,
+                    tokens=tokens_used,
+                    reason=f"cost: ${cost}"
+                )
+            
+            # =================================================================
+            # STEP 9: CACHE STORAGE (if enabled and passed guardrails)
+            # =================================================================
+            if use_cache and guardrails_passed and not cache_hit:
+                cache_data = {
+                    'response': response,
+                    'cost': cost,
+                    'tokens_used': tokens_used,
+                    'timestamp': time.time(),
+                    'model': selected_model,
+                    'rag_enhanced': use_rag
+                }
+
+                self.cache_manager.put(
+                    prompt=prompt,
+                    model=selected_model,
+                    data=cache_data
+                )
+                if verbose:
+                    print("💾 Response cached for future requests")
+            
+            # =================================================================
+            # STEP 10: COMPILE RESULTS
+            # =================================================================
             execution_time = time.time() - start_time
-            self.session_stats['requests'] += 1
-            self.session_stats['total_cost'] += cost
-            self.session_stats['avg_latency'] = (
-                (self.session_stats['avg_latency'] * (self.session_stats['requests'] - 1) + execution_time) /
-                self.session_stats['requests']
-            )
+            self._update_session_stats(execution_time, cost)
             
-            # Compile metadata
             metadata = {
                 'model': selected_model,
                 'cost': cost,
-                'tokens_used': api_metadata.get('tokens_used', 0),
+                'tokens_used': tokens_used,
                 'execution_time': execution_time,
+                'cache_hit': cache_hit,
+                'cache_level': 'none',
                 'used_rag': use_rag,
                 'used_router': use_router,
+                'used_guardrails': use_guardrails,
+                'guardrails_passed': guardrails_passed,
+                'guardrails_result': guardrails_result,
                 'rag_context': rag_context,
+                'success': True,
                 **api_metadata
             }
             
             return response, metadata
             
         except Exception as e:
-            print(f"❌ Error processing request: {e}")
-            return f"Error: {e}", {'error': str(e), 'execution_time': time.time() - start_time}
+            if verbose:
+                import traceback
+                print(f"❌ System error: {e}")
+                traceback.print_exc()
+            
+            return self._error_response(f"System error: {e}", start_time)
     
-    def get_performance_stats(self) -> dict:
-        """Get performance statistics"""
+    def _generate_mock_response(self, prompt: str, model: str) -> str:
+        """Generate realistic mock response based on prompt characteristics"""
+        prompt_lower = prompt.lower()
+        
+        # Short factual questions
+        if any(word in prompt_lower for word in ['what is', 'who is', 'when did', 'where is']):
+            if 'capital' in prompt_lower:
+                return "The capital is [City Name]. It has been the capital since [Year] and serves as the political and economic center."
+            elif len(prompt) < 50:
+                return f"The answer is [specific answer]. This is a factual response to your question about {prompt.split()[-1]}."
+            else:
+                return f"Based on your question about {prompt.split()[-1]}, here's a comprehensive answer: [Detailed explanation with multiple sentences providing context and background information]."
+        
+        # How-to questions
+        elif 'how to' in prompt_lower or 'how do' in prompt_lower:
+            return f"To accomplish this, follow these steps: 1) First step involves preparation, 2) Second step focuses on execution, 3) Final step ensures completion. This approach works well for most scenarios."
+        
+        # Explanatory requests
+        elif any(word in prompt_lower for word in ['explain', 'describe', 'tell me about']):
+            topic = prompt.split()[-1] if prompt.split() else "the topic"
+            return f"[MOCK] Comprehensive explanation of {topic}: This involves multiple aspects including technical details, practical applications, and real-world implications. The key points are interconnected and build upon each other to provide a complete understanding."
+        
+        # Simple greetings
+        elif any(word in prompt_lower for word in ['hello', 'hi', 'hey']):
+            return "Hello! I'm here to help you with any questions or tasks you have. What can I assist you with today?"
+        
+        # Default comprehensive response
+        else:
+            return f"[MOCK] Response from {model} for: {prompt[:50]}{'...' if len(prompt) > 50 else ''}. This is a detailed response that addresses your query with appropriate length and depth based on the complexity of your question."
+    
+    def _smart_guardrails_check(self, response: str, prompt: str, model: str):
+        """Smart guardrails that adapt thresholds based on prompt/response characteristics"""
+        
+        # Get base evaluation
+        result = self.guardrails_manager.evaluate_response(response, prompt, model)
+        
+        # Smart adjustments for short but appropriate responses
+        prompt_lower = prompt.lower()
+        response_length = len(response)
+        
+        # Adjust quality expectations for different prompt types
+        if any(word in prompt_lower for word in ['what is', 'who is', 'capital of']):
+            # Factual questions can have short answers
+            if response_length < 100:
+                # Don't penalize short factual answers
+                result.quality_score = max(result.quality_score, 0.6)
+        
+        elif any(word in prompt_lower for word in ['hello', 'hi', 'thanks']):
+            # Greetings should be short
+            if response_length < 50:
+                result.quality_score = max(result.quality_score, 0.8)
+        
+        # Recalculate overall score with adjustments
+        result.overall_score = (
+            result.quality_score * 0.4 +
+            result.safety_score * 0.3 +
+            result.bias_score * 0.3
+        )
+        
+        # Smart pass/fail logic
+        passes_safety = result.safety_score >= 0.8
+        passes_bias = result.bias_score >= 0.7
+        passes_quality = result.quality_score >= 0.3  # More lenient
+        
+        result.passed = passes_safety and passes_bias and passes_quality
+        
+        return result
+    
+    def _error_response(self, message: str, start_time: float, extra_metadata: Dict = None) -> Tuple[str, Dict]:
+        """Generate consistent error response"""
+        execution_time = time.time() - start_time
+        
+        metadata = {
+            'success': False,
+            'error': message,
+            'execution_time': execution_time,
+            'model': 'unknown',
+            'cost': 0.0,
+            'tokens_used': 0,
+            'cache_hit': False,
+            'guardrails_passed': False
+        }
+        
+        if extra_metadata:
+            metadata.update(extra_metadata)
+        
+        return message, metadata
+    
+    def _update_session_stats(self, execution_time: float, cost: float):
+        """Update session statistics"""
+        self.session_stats['requests'] += 1
+        self.session_stats['total_cost'] += cost
+        
+        # Update rolling average latency
+        prev_avg = self.session_stats['avg_latency']
+        count = self.session_stats['requests']
+        self.session_stats['avg_latency'] = (prev_avg * (count - 1) + execution_time) / count
+    
+    def get_comprehensive_stats(self) -> Dict[str, Any]:
+        """Get comprehensive system statistics"""
         return {
             'session': self.session_stats,
             'cache': self.cache_manager.get_stats(),
             'guardrails': self.guardrails_manager.get_stats(),
             'cost_ledger': read_summary(),
-            'rag': {}
+            'rag': self.rag_system.get_statistics() if hasattr(self.rag_system, 'get_statistics') else {}
         }
+    
+    def cleanup_systems(self):
+        """Cleanup and maintenance"""
+        if hasattr(self.cache_manager, 'cleanup_expired'):
+            cleaned = self.cache_manager.cleanup_expired()
+            print(f"✅ Cleaned {cleaned} expired cache entries")
+
+
+async def run_evaluation_async(bridge: EnhancedBridge, eval_type: str, args) -> None:
+    """Run evaluation with proper async handling"""
+    print(f"🧪 Running {eval_type} evaluation...")
+    
+    try:
+        harness = EvalHarness(bridge.process_request, args.eval_output)
+        
+        if eval_type == "quick":
+            test_suite = TestSuiteLoader.create_default_suite()
+            config = {'mock': args.mock}
+            report = harness.run_evaluation(test_suite, config, "quick_eval")
+            
+        elif eval_type == "comprehensive":
+            test_suite = TestSuiteLoader.create_default_suite()
+            configs = [
+                {"name": "baseline", "mock": args.mock},
+                {"name": "with_router", "use_router": True, "mock": args.mock},
+                {"name": "with_rag", "use_rag": True, "mock": args.mock},
+                {"name": "full_system", "use_router": True, "use_rag": True, "mock": args.mock}
+            ]
+            
+            reports = {}
+            for config in configs:
+                config_name = config.pop("name")
+                report = harness.run_evaluation(test_suite, config, f"comprehensive_{config_name}")
+                reports[config_name] = report
+            
+            print("✅ Comprehensive evaluation completed:")
+            for name, report in reports.items():
+                success_rate = report.aggregate_metrics.get('success_rate', 0)
+                print(f"   {name}: {success_rate:.1%} success rate")
+            return
+            
+        elif eval_type == "stress":
+            test_suite = TestSuiteLoader.create_stress_test_suite(30)
+            config = {'mock': args.mock}
+            report = harness.run_evaluation(test_suite, config, "stress_test")
+        
+        # Print results for quick/stress
+        success_rate = report.aggregate_metrics.get('success_rate', 0)
+        avg_quality = report.aggregate_metrics.get('avg_quality', 0)
+        print(f"✅ {eval_type.title()} evaluation completed:")
+        print(f"   Success rate: {success_rate:.1%}")
+        print(f"   Average quality: {avg_quality:.2f}")
+        print(f"   Tests run: {len(report.results)}")
+        
+    except Exception as e:
+        print(f"❌ Evaluation failed: {e}")
 
 
 def main():
-    """Main CLI function"""
+    """Enhanced CLI with production-ready architecture"""
     parser = argparse.ArgumentParser(
-        description="Claude-GPT Bridge CLI - Week 2 Enhanced",
+        description="Claude-GPT Bridge - Production AI Infrastructure",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Examples:
-  # Basic usage
-  python3 cli_bridge.py "Hello world" --mock
+🚀 PRODUCTION EXAMPLES:
+
+  # Basic usage with full system
+  python3 cli_bridge.py "Hello world" --router --cache --guardrails --mock --verbose
   
-  # Smart routing with RAG
-  python3 cli_bridge.py "What is AI?" --router --rag --verbose
+  # RAG-enhanced query  
+  python3 cli_bridge.py "What is artificial intelligence?" --router --rag --cache --guardrails --verbose
   
   # Dual model comparison
-  python3 cli_bridge.py "Explain quantum computing" --dual --mock
+  python3 cli_bridge.py "Explain quantum computing" --dual --mock --verbose
   
-  # Performance statistics
+  # System management
   python3 cli_bridge.py --stats
-  
-  # Cache management
-  python3 cli_bridge.py --cache-stats
   python3 cli_bridge.py --cache-clear
+  python3 cli_bridge.py --cleanup
   
-  # Guardrails testing
-  python3 cli_bridge.py "Test response" --guardrails-test
-  
-  # Run evaluations
-  python3 cli_bridge.py --eval-quick
-  python3 cli_bridge.py --eval-comprehensive
+  # Evaluation suite
+  python3 cli_bridge.py --eval-quick --mock
+  python3 cli_bridge.py --eval-comprehensive --mock
+  python3 cli_bridge.py --eval-stress --mock
+
+📊 PRODUCTION FEATURES:
+  ✅ Smart routing with cost optimization
+  ✅ Multi-level caching with validation  
+  ✅ Content safety & quality guardrails
+  ✅ RAG enhancement with citations
+  ✅ Comprehensive evaluation framework
+  ✅ Production monitoring & analytics
         """
     )
     
     # Core arguments
-    parser.add_argument('prompt', nargs='?', help='Prompt to process')
-    parser.add_argument('--router', action='store_true', help='Use smart routing')
-    parser.add_argument('--rag', action='store_true', help='Use RAG enhancement')
-    parser.add_argument('--cache', action='store_true', default=True, help='Use response caching')
-    parser.add_argument('--guardrails', action='store_true', default=True, help='Use guardrails validation')
-    parser.add_argument('--model', help='Force specific model')
-    parser.add_argument('--dual', action='store_true', help='Compare both models')
-    parser.add_argument('--mock', action='store_true', help='Use mock responses')
-    parser.add_argument('--verbose', action='store_true', help='Verbose output')
+    parser.add_argument('prompt', nargs='?', help='Input prompt for AI processing')
+    parser.add_argument('--router', action='store_true', help='Enable intelligent model routing')
+    parser.add_argument('--rag', action='store_true', help='Enable RAG knowledge enhancement') 
+    parser.add_argument('--cache', action='store_true', default=True, help='Enable response caching')
+    parser.add_argument('--no-cache', dest='cache', action='store_false', help='Disable caching')
+    parser.add_argument('--guardrails', action='store_true', default=True, help='Enable safety guardrails')
+    parser.add_argument('--no-guardrails', dest='guardrails', action='store_false', help='Disable guardrails')
+    parser.add_argument('--model', choices=['gpt-4o', 'gpt-4o-mini', 'claude-sonnet-4', 'claude-haiku'],
+                       help='Force specific model usage')
+    parser.add_argument('--dual', action='store_true', help='Compare responses from both model families')
+    parser.add_argument('--mock', action='store_true', help='Use mock responses for testing/development')
+    parser.add_argument('--verbose', '-v', action='store_true', help='Detailed system diagnostics')
     
-    # Statistics and management
-    parser.add_argument('--stats', action='store_true', help='Show performance statistics')
-    parser.add_argument('--rag-stats', action='store_true', help='Show RAG statistics')
-    parser.add_argument('--cache-stats', action='store_true', help='Show cache statistics')
-    parser.add_argument('--cache-clear', action='store_true', help='Clear cache')
-    parser.add_argument('--guardrails-test', action='store_true', help='Test guardrails on prompt')
+    # System management
+    parser.add_argument('--stats', action='store_true', help='Display comprehensive system statistics')
+    parser.add_argument('--cache-stats', action='store_true', help='Display cache performance metrics')
+    parser.add_argument('--cache-clear', action='store_true', help='Clear all cached responses')
+    parser.add_argument('--cleanup', action='store_true', help='Run system maintenance and cleanup')
+    parser.add_argument('--guardrails-test', action='store_true', help='Test guardrails validation on prompt')
     
-    # Evaluation commands
-    parser.add_argument('--eval-quick', action='store_true', help='Run quick evaluation')
-    parser.add_argument('--eval-comprehensive', action='store_true', help='Run comprehensive evaluation')
-    parser.add_argument('--eval-stress', action='store_true', help='Run stress test')
+    # Evaluation suite
+    parser.add_argument('--eval-quick', action='store_true', help='Run quick evaluation (8 test cases)')
+    parser.add_argument('--eval-comprehensive', action='store_true', help='Run comprehensive evaluation with ablation study')
+    parser.add_argument('--eval-stress', action='store_true', help='Run stress test with concurrent load')
     parser.add_argument('--eval-output', default='eval_results', help='Evaluation output directory')
     
     args = parser.parse_args()
     
-    # Initialize bridge
-    bridge = EnhancedBridge()
-    
     try:
-        # Handle management commands
-        if args.stats:
-            stats = bridge.get_performance_stats()
-            print("\n📊 Performance Statistics")
-            print("=" * 50)
-            print(json.dumps(stats, indent=2))
-            return
+        # Initialize enhanced bridge
+        bridge = EnhancedBridge()
         
-        if args.rag_stats:
-            stats = bridge.rag_system.get_stats()
-            print("\n🔍 RAG System Statistics")
-            print("=" * 40)
-            print(json.dumps(stats, indent=2))
+        # Handle system management commands
+        if args.stats:
+            stats = bridge.get_comprehensive_stats()
+            print("\n📊 COMPREHENSIVE SYSTEM STATISTICS")
+            print("=" * 60)
+            
+            session = stats['session']
+            print(f"\n🔄 Session Performance:")
+            print(f"   Requests: {session['requests']}")
+            print(f"   Cache hits: {session['cache_hits']}")
+            print(f"   Guardrail blocks: {session['guardrail_blocks']}")
+            print(f"   Total cost: ${session['total_cost']:.4f}")
+            print(f"   Avg latency: {session['avg_latency']:.3f}s")
+            
+            cache = stats.get('cache', {})
+            if cache:
+                print(f"\n💾 Cache Performance:")
+                print(f"   Hit rate: {cache.get('hit_rate', 0):.1%}")
+                print(f"   Entries: {cache.get('memory_size', 0)} memory, {cache.get('disk_size', 0)} disk")
+                print(f"   Cost saved: ${cache.get('cost_saved', 0):.4f}")
+            
+            guardrails = stats.get('guardrails', {})
+            if guardrails:
+                print(f"\n🛡️ Guardrails Performance:")
+                print(f"   Evaluations: {guardrails.get('total_checks', 0)}")
+                print(f"   Violations: {guardrails.get('violations_found', 0)}")
+                print(f"   Avg processing: {guardrails.get('avg_processing_time', 0):.1f}ms")
+            
             return
         
         if args.cache_stats:
             stats = bridge.cache_manager.get_stats()
-            print("\n💾 Cache Statistics")
-            print("=" * 30)
+            print("\n💾 DETAILED CACHE STATISTICS")
+            print("=" * 40)
             print(json.dumps(stats, indent=2))
             return
         
         if args.cache_clear:
-            bridge.cache_manager.clear()
-            print("✅ Cache cleared")
+            if hasattr(bridge.cache_manager, 'clear_all'):
+                bridge.cache_manager.clear_all()
+            else:
+                bridge.cache_manager.clear()
+            print("✅ All caches cleared successfully")
             return
         
-        # Handle evaluation commands
-        if args.eval_quick:
-            print("🧪 Running quick evaluation...")
-            harness = EvalHarness(bridge.process_request, args.eval_output)
-            report = harness.run_evaluation(
-                TestSuiteLoader.create_default_suite(),
-                create_eval_config(mock=args.mock),
-                "quick_eval"
-            )
-            print(f"✅ Quick evaluation completed. Success rate: {report.aggregate_metrics.get('success_rate', 0):.1%}")
+        if args.cleanup:
+            bridge.cleanup_systems()
             return
         
-        if args.eval_comprehensive:
-            print("🔬 Running comprehensive evaluation...")
-            harness = EvalHarness(bridge.process_request, args.eval_output)
-            
-            configs = [
-                create_eval_config(name="baseline", use_router=False, use_rag=False, mock=args.mock),
-                create_eval_config(name="router_only", use_router=True, use_rag=False, mock=args.mock),
-                create_eval_config(name="rag_only", use_router=False, use_rag=True, mock=args.mock),
-                create_eval_config(name="full_system", use_router=True, use_rag=True, mock=args.mock)
-            ]
-            
-            reports = harness.run_ablation_study(
-                TestSuiteLoader.create_default_suite(),
-                configs,
-                "comprehensive_eval"
-            )
-            
-            print(f"✅ Comprehensive evaluation completed with {len(reports)} configurations")
-            for name, report in reports.items():
-                success_rate = report.aggregate_metrics.get('success_rate', 0)
-                avg_quality = report.aggregate_metrics.get('avg_quality', 0)
-                print(f"  {name}: {success_rate:.1%} success, {avg_quality:.2f} quality")
+        # Handle evaluation commands  
+        if any([args.eval_quick, args.eval_comprehensive, args.eval_stress]):
+            eval_type = "quick" if args.eval_quick else "comprehensive" if args.eval_comprehensive else "stress"
+            asyncio.run(run_evaluation_async(bridge, eval_type, args))
             return
         
-        if args.eval_stress:
-            print("💪 Running stress test evaluation...")
-            harness = EvalHarness(bridge.process_request, args.eval_output)
-            stress_suite = TestSuiteLoader.create_stress_test_suite(50)
-            report = harness.run_evaluation(
-                stress_suite,
-                create_eval_config(mock=args.mock),
-                "stress_test"
-            )
-            print(f"✅ Stress test completed. Success rate: {report.aggregate_metrics.get('success_rate', 0):.1%}")
-            return
-        
-        # Require prompt for other operations
+        # Require prompt for processing operations
         if not args.prompt:
-            parser.error("Prompt required for processing operations")
+            parser.error("Prompt required. Use --help for examples.")
         
         # Handle guardrails testing
         if args.guardrails_test:
             print(f"🛡️ Testing guardrails on: {args.prompt}")
-            is_safe, summary = bridge.guardrails_manager.is_response_safe(
-                args.prompt, 
-                "Test response for guardrails evaluation"
-            )
-            print(f"Safe: {is_safe}")
-            print("Summary:", json.dumps(summary, indent=2))
+            print("-" * 50)
+            
+            # Test with sample response
+            sample_response = "This is a comprehensive test response that provides detailed information addressing the user's query with appropriate depth and context."
+            result = bridge.guardrails_manager.evaluate_response(sample_response, args.prompt, "test-model")
+            
+            print(f"✅ Guardrails Test Results:")
+            print(f"   Overall Score: {result.overall_score:.3f}")
+            print(f"   Safety Score: {result.safety_score:.3f}")
+            print(f"   Quality Score: {result.quality_score:.3f}")
+            print(f"   Bias Score: {result.bias_score:.3f}")
+            print(f"   Status: {'✅ PASS' if result.passed else '❌ FAIL'}")
+            
+            if result.violations:
+                print(f"   Violations:")
+                for v in result.violations:
+                    print(f"     - {v.rule_name}")
             return
         
         # Handle dual model comparison
         if args.dual:
-            print(f"🔄 Dual model comparison for: {args.prompt}")
+            print(f"🔄 DUAL MODEL COMPARISON")
+            print(f"Query: {args.prompt}")
             print("=" * 60)
             
             # GPT response
-            print("\n🤖 GPT Response:")
-            print("-" * 20)
+            print("\n🤖 GPT-4o-mini Response:")
+            print("-" * 30)
             gpt_response, gpt_meta = bridge.process_request(
-                args.prompt,
-                model="gpt-4o-mini",
-                use_router=False,
-                use_rag=args.rag,
-                mock=args.mock,
-                verbose=args.verbose
+                args.prompt, model="gpt-4o-mini", use_router=False, 
+                use_rag=args.rag, use_cache=args.cache, use_guardrails=args.guardrails,
+                mock=args.mock, verbose=args.verbose
             )
             print(gpt_response)
-            if args.verbose:
-                print(f"Cost: ${gpt_meta.get('cost', 0):.4f} | Tokens: {gpt_meta.get('tokens_used', 0)} | Time: {gpt_meta.get('execution_time', 0):.2f}s")
             
             # Claude response
-            print("\n🧠 Claude Response:")
-            print("-" * 20)
+            print("\n🧠 Claude Haiku Response:")
+            print("-" * 30)
             claude_response, claude_meta = bridge.process_request(
-                args.prompt,
-                model="claude-haiku",
-                use_router=False,
-                use_rag=args.rag,
-                mock=args.mock,
-                verbose=args.verbose
+                args.prompt, model="claude-haiku", use_router=False,
+                use_rag=args.rag, use_cache=args.cache, use_guardrails=args.guardrails,
+                mock=args.mock, verbose=args.verbose
             )
             print(claude_response)
-            if args.verbose:
-                print(f"Cost: ${claude_meta.get('cost', 0):.4f} | Tokens: {claude_meta.get('tokens_used', 0)} | Time: {claude_meta.get('execution_time', 0):.2f}s")
             
             # Comparison summary
-            print("\n📊 Comparison Summary:")
+            print(f"\n📊 COMPARISON SUMMARY")
             print("-" * 25)
-            print(f"GPT Cost: ${gpt_meta.get('cost', 0):.4f} | Claude Cost: ${claude_meta.get('cost', 0):.4f}")
-            print(f"GPT Time: {gpt_meta.get('execution_time', 0):.2f}s | Claude Time: {claude_meta.get('execution_time', 0):.2f}s")
-            
+            print(f"GPT: ${gpt_meta.get('cost', 0):.4f} | {gpt_meta.get('execution_time', 0):.2f}s")
+            print(f"Claude: ${claude_meta.get('cost', 0):.4f} | {claude_meta.get('execution_time', 0):.2f}s")
+            print(f"GPT Cache: {'HIT' if gpt_meta.get('cache_hit') else 'MISS'} | Claude Cache: {'HIT' if claude_meta.get('cache_hit') else 'MISS'}")
             return
         
-        # Regular request processing
+        # Main request processing
         if args.verbose:
-            print(f"🚀 Processing: {args.prompt}")
-            if args.router:
-                print("📍 Router: Enabled")
-            if args.rag:
-                print("🔍 RAG: Enabled")
-            if args.cache:
-                print("💾 Cache: Enabled")
-            if args.guardrails:
-                print("🛡️ Guardrails: Enabled")
-            print("-" * 40)
+            print(f"\n🚀 PROCESSING REQUEST")
+            print(f"Query: {args.prompt}")
+            print("-" * 50)
+            print("System Configuration:")
+            print(f"   🧠 Router: {'✅ ON' if args.router else '❌ OFF'}")
+            print(f"   🔍 RAG: {'✅ ON' if args.rag else '❌ OFF'}")
+            print(f"   💾 Cache: {'✅ ON' if args.cache else '❌ OFF'}")
+            print(f"   🛡️ Guardrails: {'✅ ON' if args.guardrails else '❌ OFF'}")
+            if args.model:
+                print(f"   🎯 Model: {args.model} (forced)")
+            if args.mock:
+                print(f"   🧪 Mock: ON (testing mode)")
+            print("-" * 50)
         
         # Process the request
         response, metadata = bridge.process_request(
@@ -376,38 +700,43 @@ Examples:
         )
         
         # Display response
+        print("\n" + "=" * 60)
+        print("RESPONSE")
+        print("=" * 60)
         print(response)
         
-        # Show metadata if verbose
+        # Show diagnostics
         if args.verbose:
-            print("\n" + "=" * 40)
-            print("📋 Request Metadata:")
-            print(f"Model: {metadata.get('model', 'unknown')}")
-            print(f"Cost: ${metadata.get('cost', 0):.4f}")
-            print(f"Tokens: {metadata.get('tokens_used', 0)}")
-            print(f"Time: {metadata.get('execution_time', 0):.2f}s")
+            print("\n" + "=" * 60)
+            print("SYSTEM DIAGNOSTICS")
+            print("=" * 60)
+            print(f"🎯 Model: {metadata.get('model', 'unknown')}")
+            print(f"💰 Cost: ${metadata.get('cost', 0):.6f}")
+            print(f"🔢 Tokens: {metadata.get('tokens_used', 0)}")
+            print(f"⏱️ Time: {metadata.get('execution_time', 0):.3f}s")
+            print(f"💾 Cache: {'✅ HIT' if metadata.get('cache_hit') else '❌ MISS'}")
+            print(f"🛡️ Guardrails: {'✅ PASS' if metadata.get('guardrails_passed') else '❌ FAIL'}")
             
-            if metadata.get('cached'):
-                print("💾 Response served from cache")
-                print(f"Cache hit count: {metadata.get('hit_count', 0)}")
-            
-            if metadata.get('guardrails_summary'):
-                guardrail_summary = metadata['guardrails_summary']
-                print(f"🛡️ Guardrails: {'✅ Passed' if guardrail_summary.get('safe', True) else '❌ Issues detected'}")
-                if guardrail_summary.get('violations'):
-                    print(f"   Violations: {', '.join(guardrail_summary['violations'])}")
+            if metadata.get('guardrails_result'):
+                gr = metadata['guardrails_result']
+                print(f"   Overall: {gr.overall_score:.3f} | Safety: {gr.safety_score:.3f} | Quality: {gr.quality_score:.3f}")
             
             if metadata.get('rag_context', {}).get('sources'):
                 sources = metadata['rag_context']['sources']
                 print(f"🔍 RAG: {len(sources)} sources used")
-                for i, source in enumerate(sources[:3]):  # Show first 3 sources
-                    print(f"   [{i+1}] {source.get('filename', 'Unknown')} (score: {source.get('score', 0):.2f})")
-        
+        else:
+            # Simple summary
+            model = metadata.get('model', 'unknown')
+            cost = metadata.get('cost', 0)
+            time_taken = metadata.get('execution_time', 0)
+            cache_status = "cached" if metadata.get('cache_hit') else "fresh"
+            print(f"\n[{model} | ${cost:.4f} | {time_taken:.2f}s | {cache_status}]")
+
     except KeyboardInterrupt:
         print("\n👋 Goodbye!")
         sys.exit(0)
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"\n❌ SYSTEM ERROR: {e}")
         if args.verbose:
             import traceback
             traceback.print_exc()

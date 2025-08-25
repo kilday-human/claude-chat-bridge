@@ -1,757 +1,612 @@
 """
 Guardrails System for Claude-GPT Bridge
-Provides content safety, quality validation, and response filtering
+Content safety, quality validation, bias detection, and response filtering
 """
 
 import re
 import json
 import time
-from typing import Dict, List, Any, Optional, Tuple, Union
+import logging
+from typing import Dict, Any, List, Tuple, Optional
 from dataclasses import dataclass, asdict
 from enum import Enum
 import hashlib
-from pathlib import Path
 
+logger = logging.getLogger(__name__)
 
-class GuardrailViolationType(Enum):
-    """Types of guardrail violations"""
-    CONTENT_SAFETY = "content_safety"
-    QUALITY_LOW = "quality_low"
-    FACTUAL_ERROR = "factual_error"
-    BIAS_DETECTED = "bias_detected"
-    HALLUCINATION = "hallucination"
-    FORMAT_INVALID = "format_invalid"
-    LENGTH_VIOLATION = "length_violation"
-    LANGUAGE_INAPPROPRIATE = "language_inappropriate"
+class GuardrailSeverity(Enum):
+    """Severity levels for guardrail violations"""
+    LOW = "low"
+    MEDIUM = "medium" 
+    HIGH = "high"
+    CRITICAL = "critical"
 
+@dataclass
+class GuardrailViolation:
+    """Represents a guardrail violation"""
+    rule_id: str
+    rule_name: str
+    severity: GuardrailSeverity
+    message: str
+    confidence: float
+    matched_content: Optional[str] = None
+    suggestion: Optional[str] = None
+    metadata: Dict[str, Any] = None
 
 @dataclass
 class GuardrailResult:
     """Result of guardrail evaluation"""
     passed: bool
-    confidence: float
-    violations: List[GuardrailViolationType]
-    messages: List[str]
-    metadata: Dict[str, Any]
-    processing_time: float
+    violations: List[GuardrailViolation]
+    overall_score: float
+    safety_score: float
+    quality_score: float
+    bias_score: float
+    processing_time_ms: int
+    metadata: Dict[str, Any] = None
 
-
-@dataclass
-class GuardrailConfig:
-    """Configuration for guardrail checks"""
-    enable_content_safety: bool = True
-    enable_quality_check: bool = True
-    enable_bias_detection: bool = True
-    enable_hallucination_check: bool = False  # Requires additional models
-    enable_format_validation: bool = True
+class ContentSafetyGuard:
+    """Content safety detection and filtering"""
     
-    # Thresholds
-    min_quality_score: float = 0.6
-    max_response_length: int = 4000
-    min_response_length: int = 10
-    
-    # Content safety patterns
-    safety_patterns: List[str] = None
-    
-    def __post_init__(self):
-        if self.safety_patterns is None:
-            self.safety_patterns = [
-                r'\b(?:hate|violence|harm|illegal|dangerous)\b',
-                r'\b(?:suicide|self-harm|death)\b',
-                r'\b(?:racist|sexist|discriminat)\w*\b',
-                r'\b(?:exploit|hack|crack|piracy)\b'
+    def __init__(self):
+        # Harmful content patterns
+        self.harmful_patterns = {
+            'violence': [
+                r'\b(kill|murder|assault|attack|violence|harm|hurt|injure)\b.*\b(people|person|human|someone)\b',
+                r'\b(bomb|weapon|gun|knife|explosive)\b.*\b(make|build|create|construct)\b',
+                r'\b(suicide|self-harm|cutting)\b.*\b(how to|instructions|guide)\b'
+            ],
+            'hate_speech': [
+                r'\b(hate|despise|inferior)\b.*\b(race|ethnicity|religion|gender|sexual)\b',
+                r'\b(terrorist|extremist)\b.*\b(group|organization|movement)\b',
+                r'\b(discriminat|prejudic|racist|sexist|homophobic)\b'
+            ],
+            'adult_content': [
+                r'\b(sexual|explicit|adult|pornographic)\b.*\b(content|material|images)\b',
+                r'\b(nude|naked|sex|intercourse)\b.*\b(minors|children|kids|teens)\b'
+            ],
+            'illegal_activity': [
+                r'\b(drugs|illegal|criminal|fraud|scam)\b.*\b(how to|guide|instructions|tutorial)\b',
+                r'\b(hack|breach|exploit|unauthorized)\b.*\b(access|entry|system|network)\b',
+                r'\b(money laundering|tax evasion|identity theft)\b'
             ]
-
-
-class BaseGuardrail:
-    """Base class for all guardrails"""
-    
-    def __init__(self, name: str, config: GuardrailConfig):
-        self.name = name
-        self.config = config
-    
-    def check(self, prompt: str, response: str, metadata: Dict[str, Any] = None) -> GuardrailResult:
-        """Check if response passes this guardrail"""
-        raise NotImplementedError
-    
-    def _create_result(
-        self,
-        passed: bool,
-        confidence: float,
-        violations: List[GuardrailViolationType] = None,
-        messages: List[str] = None,
-        metadata: Dict[str, Any] = None,
-        processing_time: float = 0.0
-    ) -> GuardrailResult:
-        """Helper to create GuardrailResult"""
-        return GuardrailResult(
-            passed=passed,
-            confidence=confidence,
-            violations=violations or [],
-            messages=messages or [],
-            metadata=metadata or {},
-            processing_time=processing_time
-        )
-
-
-class ContentSafetyGuardrail(BaseGuardrail):
-    """Content safety checking using pattern matching and heuristics"""
-    
-    def __init__(self, config: GuardrailConfig):
-        super().__init__("content_safety", config)
-        self.safety_patterns = [re.compile(pattern, re.IGNORECASE) 
-                               for pattern in config.safety_patterns]
-        
-        # Additional safety checks
-        self.harmful_keywords = {
-            'violence': ['kill', 'murder', 'assault', 'attack', 'weapon', 'bomb'],
-            'hate': ['racist', 'sexist', 'homophobic', 'hate speech'],
-            'illegal': ['drugs', 'piracy', 'hacking', 'fraud', 'scam'],
-            'self_harm': ['suicide', 'self-harm', 'cutting', 'overdose']
         }
     
-    def check(self, prompt: str, response: str, metadata: Dict[str, Any] = None) -> GuardrailResult:
-        start_time = time.time()
-        
+    def evaluate(self, text: str) -> List[GuardrailViolation]:
+        """Evaluate text for content safety violations"""
         violations = []
-        messages = []
-        safety_score = 1.0
+        text_lower = text.lower()
         
-        # Pattern-based checking
-        for pattern in self.safety_patterns:
-            matches = pattern.findall(response.lower())
-            if matches:
-                violations.append(GuardrailViolationType.CONTENT_SAFETY)
-                messages.append(f"Unsafe content detected: {', '.join(matches)}")
-                safety_score *= 0.5
+        for category, patterns in self.harmful_patterns.items():
+            for pattern in patterns:
+                matches = re.finditer(pattern, text_lower, re.IGNORECASE)
+                for match in matches:
+                    violation = GuardrailViolation(
+                        rule_id=f"safety_{category}",
+                        rule_name=f"Content Safety - {category.title().replace('_', ' ')}",
+                        severity=GuardrailSeverity.HIGH,
+                        message=f"Potential {category.replace('_', ' ')} content detected",
+                        confidence=0.8,
+                        matched_content=match.group(),
+                        suggestion="Consider rephrasing to avoid potentially harmful content"
+                    )
+                    violations.append(violation)
         
-        # Keyword-based checking with context
-        for category, keywords in self.harmful_keywords.items():
-            found_keywords = []
-            for keyword in keywords:
-                if keyword in response.lower():
-                    found_keywords.append(keyword)
-            
-            if found_keywords:
-                # Context check - reduce false positives
-                if not self._is_educational_context(response, found_keywords):
-                    violations.append(GuardrailViolationType.CONTENT_SAFETY)
-                    messages.append(f"Potentially harmful {category} content: {', '.join(found_keywords)}")
-                    safety_score *= 0.7
-        
-        # Length-based safety (extremely long responses might be problematic)
-        if len(response) > self.config.max_response_length * 2:
-            violations.append(GuardrailViolationType.LENGTH_VIOLATION)
-            messages.append(f"Response extremely long ({len(response)} chars)")
-            safety_score *= 0.8
-        
-        processing_time = time.time() - start_time
-        passed = len(violations) == 0 and safety_score > 0.5
-        
-        return self._create_result(
-            passed=passed,
-            confidence=safety_score,
-            violations=violations,
-            messages=messages,
-            metadata={'safety_score': safety_score, 'checks_performed': len(self.safety_patterns)},
-            processing_time=processing_time
-        )
-    
-    def _is_educational_context(self, response: str, keywords: List[str]) -> bool:
-        """Check if harmful keywords appear in educational/informational context"""
-        educational_indicators = [
-            'education', 'information', 'awareness', 'prevention',
-            'history', 'research', 'study', 'academic', 'scholarly',
-            'definition', 'explanation', 'understand', 'learn'
-        ]
-        
-        response_lower = response.lower()
-        return any(indicator in response_lower for indicator in educational_indicators)
+        return violations
 
-
-class QualityGuardrail(BaseGuardrail):
+class QualityGuard:
     """Response quality validation"""
     
-    def __init__(self, config: GuardrailConfig):
-        super().__init__("quality", config)
-    
-    def check(self, prompt: str, response: str, metadata: Dict[str, Any] = None) -> GuardrailResult:
-        start_time = time.time()
+    def __init__(self):
+        # Quality assessment patterns
+        self.quality_indicators = {
+            'coherence': [
+                r'\b(however|therefore|furthermore|moreover|additionally|consequently)\b',
+                r'\b(first|second|third|finally|in conclusion)\b',
+                r'\b(because|since|although|while|despite)\b'
+            ],
+            'completeness': [
+                r'\b(comprehensive|detailed|thorough|complete|extensive)\b',
+                r'\b(example|instance|specifically|particularly)\b',
+                r'\b(include|contains|covers|addresses)\b'
+            ],
+            'clarity': [
+                r'\b(clear|obvious|evident|apparent|straightforward)\b',
+                r'\b(explain|clarify|demonstrate|illustrate)\b',
+                r'\b(simple|easy|understand|comprehend)\b'
+            ]
+        }
         
-        violations = []
-        messages = []
-        quality_metrics = {}
-        
-        # Length checks
-        if len(response.strip()) < self.config.min_response_length:
-            violations.append(GuardrailViolationType.QUALITY_LOW)
-            messages.append(f"Response too short ({len(response)} chars)")
-        
-        if len(response) > self.config.max_response_length:
-            violations.append(GuardrailViolationType.LENGTH_VIOLATION)
-            messages.append(f"Response too long ({len(response)} chars)")
-        
-        # Content quality metrics
-        quality_metrics.update(self._analyze_content_quality(response))
-        
-        # Coherence check
-        coherence_score = self._check_coherence(response)
-        quality_metrics['coherence'] = coherence_score
-        
-        # Relevance check (basic keyword overlap)
-        relevance_score = self._check_relevance(prompt, response)
-        quality_metrics['relevance'] = relevance_score
-        
-        # Overall quality score
-        overall_quality = (
-            quality_metrics['readability'] * 0.3 +
-            coherence_score * 0.4 +
-            relevance_score * 0.3
-        )
-        
-        if overall_quality < self.config.min_quality_score:
-            violations.append(GuardrailViolationType.QUALITY_LOW)
-            messages.append(f"Low quality score: {overall_quality:.2f}")
-        
-        processing_time = time.time() - start_time
-        passed = len(violations) == 0
-        
-        return self._create_result(
-            passed=passed,
-            confidence=overall_quality,
-            violations=violations,
-            messages=messages,
-            metadata=quality_metrics,
-            processing_time=processing_time
-        )
-    
-    def _analyze_content_quality(self, response: str) -> Dict[str, float]:
-        """Analyze various quality metrics"""
-        words = response.split()
-        sentences = re.split(r'[.!?]+', response)
-        sentences = [s.strip() for s in sentences if s.strip()]
-        
-        if not words or not sentences:
-            return {'readability': 0.0, 'complexity': 0.0, 'structure': 0.0}
-        
-        # Basic readability (Flesch approximation)
-        avg_sentence_length = len(words) / len(sentences)
-        avg_word_length = sum(len(word) for word in words) / len(words)
-        readability = max(0, min(1, (206.835 - 1.015 * avg_sentence_length - 84.6 * (avg_word_length / 6)) / 100))
-        
-        # Structural quality
-        structure_score = 1.0
-        if len(sentences) == 1 and len(words) > 50:
-            structure_score *= 0.8  # Penalize very long single sentences
-        
-        # Vocabulary diversity
-        unique_words = len(set(word.lower() for word in words))
-        diversity = unique_words / len(words) if words else 0
-        
-        return {
-            'readability': readability,
-            'complexity': min(1.0, avg_word_length / 8),
-            'structure': structure_score,
-            'diversity': diversity,
-            'word_count': len(words),
-            'sentence_count': len(sentences)
+        # Quality detractors
+        self.quality_detractors = {
+            'vague': [
+                r'\b(maybe|perhaps|possibly|might|could be|seems like)\b.*\b(maybe|perhaps|possibly|might|could be|seems like)\b',
+                r'\b(some|various|certain|several)\b.*\b(some|various|certain|several)\b',
+                r'\b(thing|stuff|something|anything|everything)\b'
+            ],
+            'repetitive': [
+                r'\b(\w+)\s+\1\b',  # Repeated words
+                r'(\b\w+\b)(?:\s+\w+){0,5}\s+\1'  # Words repeated within 5 words
+            ],
+            'incomplete': [
+                r'\b(I don\'t know|I\'m not sure|I can\'t say|unclear|uncertain)\b',
+                r'\b(more information needed|need more context|depends on)\b',
+                r'\.{3,}|…'  # Multiple ellipses indicating incompleteness
+            ]
         }
     
-    def _check_coherence(self, response: str) -> float:
-        """Basic coherence checking"""
-        sentences = re.split(r'[.!?]+', response)
-        sentences = [s.strip() for s in sentences if s.strip()]
+    def evaluate(self, text: str, prompt: str = "") -> Tuple[float, List[GuardrailViolation]]:
+        """Evaluate response quality and return score with violations"""
+        violations = []
         
-        if len(sentences) < 2:
-            return 1.0  # Single sentence is coherent by definition
+        # Basic quality metrics
+        word_count = len(text.split())
+        sentence_count = len(re.findall(r'[.!?]+', text))
+        avg_sentence_length = word_count / max(sentence_count, 1)
         
-        # Simple coherence heuristics
-        coherence_score = 1.0
+        # Quality indicators score
+        indicator_score = 0
+        for category, patterns in self.quality_indicators.items():
+            for pattern in patterns:
+                matches = len(re.findall(pattern, text, re.IGNORECASE))
+                indicator_score += matches * 0.1
         
-        # Check for topic consistency (repeated key terms)
-        all_words = response.lower().split()
-        word_freq = {}
-        for word in all_words:
-            if len(word) > 4:  # Focus on meaningful words
-                word_freq[word] = word_freq.get(word, 0) + 1
+        # Quality detractors
+        detractor_score = 0
+        for category, patterns in self.quality_detractors.items():
+            for pattern in patterns:
+                matches = re.finditer(pattern, text, re.IGNORECASE)
+                for match in matches:
+                    detractor_score += 0.2
+                    
+                    if category == 'vague' and len(list(re.finditer(pattern, text, re.IGNORECASE))) > 2:
+                        violation = GuardrailViolation(
+                            rule_id=f"quality_{category}",
+                            rule_name=f"Quality Issue - {category.title()}",
+                            severity=GuardrailSeverity.MEDIUM,
+                            message=f"Response contains {category} language",
+                            confidence=0.7,
+                            matched_content=match.group(),
+                            suggestion=f"Use more specific and concrete language"
+                        )
+                        violations.append(violation)
         
-        # Coherent responses have some repeated key terms
-        repeated_terms = sum(1 for count in word_freq.values() if count > 1)
-        if repeated_terms < len(sentences) * 0.2:
-            coherence_score *= 0.8
+        # Length penalties/bonuses
+        length_score = 0
+        if word_count < 10:
+            length_score = -0.5
+            violations.append(GuardrailViolation(
+                rule_id="quality_length_short",
+                rule_name="Quality Issue - Too Short",
+                severity=GuardrailSeverity.MEDIUM,
+                message="Response is very short and may be incomplete",
+                confidence=0.8,
+                suggestion="Provide more detailed and comprehensive information"
+            ))
+        elif word_count > 500:
+            length_score = -0.2
+        elif 50 <= word_count <= 200:
+            length_score = 0.1
         
-        return coherence_score
-    
-    def _check_relevance(self, prompt: str, response: str) -> float:
-        """Basic relevance checking using keyword overlap"""
-        prompt_words = set(word.lower().strip('.,!?') for word in prompt.split() if len(word) > 3)
-        response_words = set(word.lower().strip('.,!?') for word in response.split() if len(word) > 3)
+        # Sentence structure score
+        structure_score = 0
+        if avg_sentence_length < 5:
+            structure_score = -0.1
+        elif avg_sentence_length > 30:
+            structure_score = -0.1
+        else:
+            structure_score = 0.1
         
-        if not prompt_words:
-            return 1.0  # No specific terms to match
+        # Calculate final quality score
+        base_score = 0.5  # Neutral starting point
+        final_score = base_score + indicator_score - detractor_score + length_score + structure_score
+        final_score = max(0.0, min(1.0, final_score))
         
-        overlap = len(prompt_words.intersection(response_words))
-        relevance = overlap / len(prompt_words)
-        
-        return min(1.0, relevance + 0.3)  # Base relevance + bonus
+        return final_score, violations
 
-
-class BiasDetectionGuardrail(BaseGuardrail):
-    """Basic bias detection in responses"""
+class BiasDetectionGuard:
+    """Bias detection in responses"""
     
-    def __init__(self, config: GuardrailConfig):
-        super().__init__("bias_detection", config)
-        
-        # Bias indicator patterns
+    def __init__(self):
+        # Bias detection patterns
         self.bias_patterns = {
             'gender': [
-                r'\b(?:all|most|typical) (?:men|women|boys|girls)\b',
-                r'\b(?:men|women) (?:are|should|always|never)\b'
+                r'\b(men|male|guy|boy)\b.*\b(better|superior|stronger|smarter)\b.*\b(women|female|girl|lady)\b',
+                r'\b(women|female|girl|lady)\b.*\b(emotional|irrational|weak|inferior)\b',
+                r'\b(typical|natural|normal)\b.*\b(male|female|man|woman)\b.*\b(behavior|trait|characteristic)\b'
             ],
             'racial': [
-                r'\b(?:all|most|typical) (?:black|white|asian|hispanic) people\b',
-                r'\b(?:naturally|inherently) (?:good|bad) at\b'
+                r'\b(race|ethnic|cultural)\b.*\b(superior|inferior|better|worse|natural|typical)\b',
+                r'\b(all|most|typically)\b.*\b(people|individuals|members)\b.*\b(from|of)\b.*\b(country|culture|ethnicity)\b.*\b(are|do|have)\b'
             ],
             'age': [
-                r'\b(?:old|young) people (?:are|can\'t|should)\b',
-                r'\bmillennials|boomers (?:are|always)\b'
+                r'\b(young|old|elderly|senior)\b.*\b(people|individuals|generation)\b.*\b(always|never|typically|usually)\b',
+                r'\b(millennials|boomers|gen z|generation)\b.*\b(lazy|entitled|confused|outdated)\b'
             ],
-            'economic': [
-                r'\b(?:poor|rich) people (?:are|always|never)\b',
-                r'\bdeserve (?:poverty|wealth)\b'
+            'socioeconomic': [
+                r'\b(poor|rich|wealthy|low-income|high-income)\b.*\b(people|families|individuals)\b.*\b(always|never|typically|usually)\b.*\b(lazy|hardworking|smart|stupid)\b'
             ]
         }
     
-    def check(self, prompt: str, response: str, metadata: Dict[str, Any] = None) -> GuardrailResult:
-        start_time = time.time()
-        
+    def evaluate(self, text: str) -> Tuple[float, List[GuardrailViolation]]:
+        """Evaluate text for potential bias"""
         violations = []
-        messages = []
-        bias_indicators = {}
+        bias_score = 1.0  # Start with perfect score
         
-        for bias_type, patterns in self.bias_patterns.items():
-            matches = []
+        for category, patterns in self.bias_patterns.items():
             for pattern in patterns:
-                found = re.findall(pattern, response, re.IGNORECASE)
-                matches.extend(found)
-            
-            if matches:
-                bias_indicators[bias_type] = matches
-                violations.append(GuardrailViolationType.BIAS_DETECTED)
-                messages.append(f"Potential {bias_type} bias detected: {', '.join(matches)}")
+                matches = re.finditer(pattern, text, re.IGNORECASE)
+                for match in matches:
+                    bias_score -= 0.2
+                    violation = GuardrailViolation(
+                        rule_id=f"bias_{category}",
+                        rule_name=f"Potential Bias - {category.title()}",
+                        severity=GuardrailSeverity.MEDIUM,
+                        message=f"Potential {category} bias detected",
+                        confidence=0.6,
+                        matched_content=match.group(),
+                        suggestion="Consider using more neutral and inclusive language"
+                    )
+                    violations.append(violation)
         
-        # Calculate bias score (lower is better)
-        bias_score = 1.0 - (len(violations) * 0.2)
+        # Check for absolute statements that might indicate bias
+        absolute_patterns = [
+            r'\b(all|every|never|always|none|everyone|nobody)\b.*\b(people|person|individual|group)\b'
+        ]
+        
+        for pattern in absolute_patterns:
+            matches = re.finditer(pattern, text, re.IGNORECASE)
+            for match in matches:
+                if len(violations) < 5:  # Limit violations
+                    bias_score -= 0.1
+                    violation = GuardrailViolation(
+                        rule_id="bias_absolute",
+                        rule_name="Potential Bias - Absolute Statement",
+                        severity=GuardrailSeverity.LOW,
+                        message="Absolute statements may indicate bias",
+                        confidence=0.4,
+                        matched_content=match.group(),
+                        suggestion="Consider using more nuanced language with qualifiers"
+                    )
+                    violations.append(violation)
+        
         bias_score = max(0.0, bias_score)
-        
-        processing_time = time.time() - start_time
-        passed = len(violations) == 0
-        
-        return self._create_result(
-            passed=passed,
-            confidence=bias_score,
-            violations=violations,
-            messages=messages,
-            metadata={'bias_indicators': bias_indicators, 'bias_score': bias_score},
-            processing_time=processing_time
-        )
+        return bias_score, violations
 
-
-class FormatValidationGuardrail(BaseGuardrail):
-    """Format and structure validation"""
+class FormatValidationGuard:
+    """Response format and structure validation"""
     
-    def __init__(self, config: GuardrailConfig):
-        super().__init__("format_validation", config)
-    
-    def check(self, prompt: str, response: str, metadata: Dict[str, Any] = None) -> GuardrailResult:
-        start_time = time.time()
-        
+    def evaluate(self, text: str, expected_format: Optional[str] = None) -> List[GuardrailViolation]:
+        """Validate response format"""
         violations = []
-        messages = []
-        format_metrics = {}
         
         # Basic format checks
-        if not response.strip():
-            violations.append(GuardrailViolationType.FORMAT_INVALID)
-            messages.append("Empty response")
+        if not text.strip():
+            violations.append(GuardrailViolation(
+                rule_id="format_empty",
+                rule_name="Format Issue - Empty Response",
+                severity=GuardrailSeverity.HIGH,
+                message="Response is empty",
+                confidence=1.0,
+                suggestion="Provide a meaningful response"
+            ))
         
-        # Check for proper sentence structure
-        sentences = re.split(r'[.!?]+', response)
-        valid_sentences = [s.strip() for s in sentences if s.strip() and len(s.strip()) > 3]
-        
-        if len(valid_sentences) == 0 and len(response.strip()) > 10:
-            violations.append(GuardrailViolationType.FORMAT_INVALID)
-            messages.append("No proper sentence structure detected")
-        
-        # Check for encoding issues
+        # Check for malformed encoding
         try:
-            response.encode('utf-8')
+            text.encode('utf-8')
         except UnicodeEncodeError:
-            violations.append(GuardrailViolationType.FORMAT_INVALID)
-            messages.append("Text encoding issues detected")
+            violations.append(GuardrailViolation(
+                rule_id="format_encoding",
+                rule_name="Format Issue - Encoding Error",
+                severity=GuardrailSeverity.HIGH,
+                message="Response contains invalid characters",
+                confidence=1.0,
+                suggestion="Ensure response uses valid UTF-8 encoding"
+            ))
         
-        # Check for extremely repetitive content
-        repetition_score = self._check_repetition(response)
-        format_metrics['repetition_score'] = repetition_score
+        # Check for excessive whitespace
+        if re.search(r'\s{10,}', text):
+            violations.append(GuardrailViolation(
+                rule_id="format_whitespace",
+                rule_name="Format Issue - Excessive Whitespace",
+                severity=GuardrailSeverity.LOW,
+                message="Response contains excessive whitespace",
+                confidence=0.8,
+                suggestion="Clean up formatting by removing excessive spaces"
+            ))
         
-        if repetition_score > 0.7:
-            violations.append(GuardrailViolationType.FORMAT_INVALID)
-            messages.append(f"High repetition detected: {repetition_score:.2f}")
+        # Check for broken markdown if it looks like markdown
+        if '```' in text and text.count('```') % 2 != 0:
+            violations.append(GuardrailViolation(
+                rule_id="format_markdown",
+                rule_name="Format Issue - Broken Markdown",
+                severity=GuardrailSeverity.MEDIUM,
+                message="Markdown code blocks are not properly closed",
+                confidence=0.9,
+                suggestion="Ensure all code blocks are properly closed with matching backticks"
+            ))
         
-        processing_time = time.time() - start_time
-        passed = len(violations) == 0
-        format_score = 1.0 - (len(violations) * 0.3)
-        
-        return self._create_result(
-            passed=passed,
-            confidence=max(0.0, format_score),
-            violations=violations,
-            messages=messages,
-            metadata=format_metrics,
-            processing_time=processing_time
-        )
-    
-    def _check_repetition(self, response: str) -> float:
-        """Check for repetitive content"""
-        words = response.split()
-        if len(words) < 10:
-            return 0.0
-        
-        # Check for repeated phrases
-        phrases = []
-        for i in range(len(words) - 2):
-            phrase = ' '.join(words[i:i+3])
-            phrases.append(phrase)
-        
-        if not phrases:
-            return 0.0
-        
-        phrase_counts = {}
-        for phrase in phrases:
-            phrase_counts[phrase] = phrase_counts.get(phrase, 0) + 1
-        
-        # Calculate repetition ratio
-        repeated_phrases = sum(count - 1 for count in phrase_counts.values() if count > 1)
-        return repeated_phrases / len(phrases) if phrases else 0.0
+        return violations
 
-
-class GuardrailsManager:
-    """Main guardrails system managing multiple guardrails"""
+class GuardrailsSystem:
+    """Main guardrails orchestration system"""
     
-    def __init__(self, config: GuardrailConfig = None):
-        self.config = config or GuardrailConfig()
-        self.guardrails: List[BaseGuardrail] = []
-        self._initialize_guardrails()
+    def __init__(self, config: Dict[str, Any]):
+        self.config = config
         
-        # Performance tracking
+        # Initialize guardrail components
+        self.content_safety = ContentSafetyGuard()
+        self.quality_guard = QualityGuard()
+        self.bias_detection = BiasDetectionGuard()
+        self.format_validation = FormatValidationGuard()
+        
+        # Configuration settings
+        self.enable_content_safety = config.get('enable_content_safety', True)
+        self.enable_quality_check = config.get('enable_quality_check', True)
+        self.enable_bias_detection = config.get('enable_bias_detection', True)
+        self.enable_format_validation = config.get('enable_format_validation', True)
+        
+        # Thresholds
+        self.min_quality_score = config.get('min_quality_score', 0.6)
+        self.min_safety_score = config.get('min_safety_score', 0.8)
+        self.min_bias_score = config.get('min_bias_score', 0.7)
+        
+        # Scoring weights
+        self.quality_weight = config.get('quality_weight', 0.4)
+        self.safety_weight = config.get('safety_weight', 0.3)
+        self.bias_weight = config.get('bias_weight', 0.3)
+        
+        # Statistics
         self.stats = {
-            'total_checks': 0,
-            'violations_found': 0,
-            'checks_by_type': {},
-            'avg_processing_time': 0.0,
-            'violation_history': []
+            'total_evaluations': 0,
+            'passed_evaluations': 0,
+            'failed_evaluations': 0,
+            'safety_violations': 0,
+            'quality_violations': 0,
+            'bias_violations': 0,
+            'format_violations': 0,
+            'avg_processing_time_ms': 0,
+            'total_processing_time_ms': 0
         }
     
-    def _initialize_guardrails(self):
-        """Initialize enabled guardrails"""
-        if self.config.enable_content_safety:
-            self.guardrails.append(ContentSafetyGuardrail(self.config))
-        
-        if self.config.enable_quality_check:
-            self.guardrails.append(QualityGuardrail(self.config))
-        
-        if self.config.enable_bias_detection:
-            self.guardrails.append(BiasDetectionGuardrail(self.config))
-        
-        if self.config.enable_format_validation:
-            self.guardrails.append(FormatValidationGuardrail(self.config))
-    
-    def check_response(
-        self,
-        prompt: str,
-        response: str,
-        metadata: Dict[str, Any] = None,
-        required_guardrails: List[str] = None
-    ) -> Dict[str, GuardrailResult]:
-        """Run all enabled guardrails on response"""
+    def evaluate_response(self, text: str, prompt: str = "", model: str = "") -> GuardrailResult:
+        """Comprehensive response evaluation"""
         start_time = time.time()
-        results = {}
         
-        guardrails_to_run = self.guardrails
-        if required_guardrails:
-            guardrails_to_run = [
-                g for g in self.guardrails 
-                if g.name in required_guardrails
-            ]
-        
-        for guardrail in guardrails_to_run:
-            try:
-                result = guardrail.check(prompt, response, metadata)
-                results[guardrail.name] = result
-                
-                # Update stats
-                self.stats['checks_by_type'][guardrail.name] = (
-                    self.stats['checks_by_type'].get(guardrail.name, 0) + 1
-                )
-                
-                if not result.passed:
-                    self.stats['violations_found'] += 1
-                    self.stats['violation_history'].append({
-                        'timestamp': time.time(),
-                        'guardrail': guardrail.name,
-                        'violations': [v.value for v in result.violations],
-                        'confidence': result.confidence
-                    })
-            
-            except Exception as e:
-                # Graceful degradation
-                results[guardrail.name] = GuardrailResult(
-                    passed=False,
-                    confidence=0.0,
-                    violations=[GuardrailViolationType.FORMAT_INVALID],
-                    messages=[f"Guardrail error: {str(e)}"],
-                    metadata={'error': str(e)},
-                    processing_time=0.0
-                )
-        
-        # Update overall stats
-        total_time = time.time() - start_time
-        self.stats['total_checks'] += 1
-        self.stats['avg_processing_time'] = (
-            (self.stats['avg_processing_time'] * (self.stats['total_checks'] - 1) + total_time) /
-            self.stats['total_checks']
-        )
-        
-        return results
-    
-    def is_response_safe(
-        self,
-        prompt: str,
-        response: str,
-        metadata: Dict[str, Any] = None,
-        min_confidence: float = 0.7
-    ) -> Tuple[bool, Dict[str, Any]]:
-        """Quick safety check with summary"""
-        results = self.check_response(prompt, response, metadata)
-        
-        # Aggregate results
-        all_passed = all(result.passed for result in results.values())
-        min_confidence_met = all(
-            result.confidence >= min_confidence for result in results.values()
-        )
-        
-        # Collect all violations
         all_violations = []
-        all_messages = []
-        confidence_scores = {}
+        safety_score = 1.0
+        quality_score = 0.8  # Default
+        bias_score = 1.0
         
-        for name, result in results.items():
-            all_violations.extend(result.violations)
-            all_messages.extend(result.messages)
-            confidence_scores[name] = result.confidence
+        # Content safety evaluation
+        if self.enable_content_safety:
+            safety_violations = self.content_safety.evaluate(text)
+            all_violations.extend(safety_violations)
+            
+            # Calculate safety score based on violations
+            if safety_violations:
+                severity_weights = {
+                    GuardrailSeverity.LOW: 0.1,
+                    GuardrailSeverity.MEDIUM: 0.25,
+                    GuardrailSeverity.HIGH: 0.5,
+                    GuardrailSeverity.CRITICAL: 1.0
+                }
+                
+                safety_penalty = sum(severity_weights[v.severity] for v in safety_violations)
+                safety_score = max(0.0, 1.0 - safety_penalty)
+                self.stats['safety_violations'] += len(safety_violations)
         
-        overall_safe = all_passed and min_confidence_met
+        # Quality evaluation
+        if self.enable_quality_check:
+            quality_score, quality_violations = self.quality_guard.evaluate(text, prompt)
+            all_violations.extend(quality_violations)
+            self.stats['quality_violations'] += len(quality_violations)
         
-        summary = {
-            'safe': overall_safe,
-            'violations': [v.value for v in set(all_violations)],
-            'messages': all_messages,
-            'confidence_scores': confidence_scores,
-            'overall_confidence': min(confidence_scores.values()) if confidence_scores else 0.0,
-            'guardrails_run': list(results.keys())
+        # Bias detection
+        if self.enable_bias_detection:
+            bias_score, bias_violations = self.bias_detection.evaluate(text)
+            all_violations.extend(bias_violations)
+            self.stats['bias_violations'] += len(bias_violations)
+        
+        # Format validation
+        if self.enable_format_validation:
+            format_violations = self.format_validation.evaluate(text)
+            all_violations.extend(format_violations)
+            self.stats['format_violations'] += len(format_violations)
+        
+        # Calculate overall score
+        overall_score = (
+            quality_score * self.quality_weight +
+            safety_score * self.safety_weight +
+            bias_score * self.bias_weight
+        )
+        
+        # Determine if response passes
+        passes_safety = safety_score >= self.min_safety_score
+        passes_quality = quality_score >= self.min_quality_score  
+        passes_bias = bias_score >= self.min_bias_score
+        passes_format = len([v for v in all_violations if v.rule_id.startswith('format') and v.severity in [GuardrailSeverity.HIGH, GuardrailSeverity.CRITICAL]]) == 0
+        
+        passed = passes_safety and passes_quality and passes_bias and passes_format
+        
+        # Processing time
+        processing_time_ms = int((time.time() - start_time) * 1000)
+        
+        # Update statistics
+        self.stats['total_evaluations'] += 1
+        if passed:
+            self.stats['passed_evaluations'] += 1
+        else:
+            self.stats['failed_evaluations'] += 1
+        
+        self.stats['total_processing_time_ms'] += processing_time_ms
+        self.stats['avg_processing_time_ms'] = self.stats['total_processing_time_ms'] / self.stats['total_evaluations']
+        
+        # Create result
+        result = GuardrailResult(
+            passed=passed,
+            violations=all_violations,
+            overall_score=overall_score,
+            safety_score=safety_score,
+            quality_score=quality_score,
+            bias_score=bias_score,
+            processing_time_ms=processing_time_ms,
+            metadata={
+                'model': model,
+                'prompt_length': len(prompt),
+                'response_length': len(text),
+                'word_count': len(text.split()),
+                'passes_safety': passes_safety,
+                'passes_quality': passes_quality,
+                'passes_bias': passes_bias,
+                'passes_format': passes_format
+            }
+        )
+        
+        return result
+    
+    def evaluate_prompt(self, prompt: str) -> GuardrailResult:
+        """Evaluate input prompt for safety and appropriateness"""
+        start_time = time.time()
+        
+        violations = []
+        safety_score = 1.0
+        
+        # Check prompt for safety issues
+        if self.enable_content_safety:
+            safety_violations = self.content_safety.evaluate(prompt)
+            violations.extend(safety_violations)
+            
+            if safety_violations:
+                severity_weights = {
+                    GuardrailSeverity.LOW: 0.1,
+                    GuardrailSeverity.MEDIUM: 0.25,
+                    GuardrailSeverity.HIGH: 0.5,
+                    GuardrailSeverity.CRITICAL: 1.0
+                }
+                
+                safety_penalty = sum(severity_weights[v.severity] for v in safety_violations)
+                safety_score = max(0.0, 1.0 - safety_penalty)
+        
+        # Check for prompt injection attempts
+        injection_patterns = [
+            r'ignore\s+previous\s+instructions',
+            r'system\s*:\s*you\s+are',
+            r'override\s+your\s+programming',
+            r'jailbreak|roleplay\s+as|pretend\s+you\s+are',
+            r'developer\s+mode|admin\s+mode|god\s+mode'
+        ]
+        
+        for pattern in injection_patterns:
+            if re.search(pattern, prompt, re.IGNORECASE):
+                violations.append(GuardrailViolation(
+                    rule_id="prompt_injection",
+                    rule_name="Prompt Injection Attempt",
+                    severity=GuardrailSeverity.HIGH,
+                    message="Potential prompt injection or system manipulation attempt",
+                    confidence=0.8,
+                    suggestion="Use standard queries without attempting to modify system behavior"
+                ))
+                safety_score = min(safety_score, 0.3)
+        
+        processing_time_ms = int((time.time() - start_time) * 1000)
+        passed = safety_score >= self.min_safety_score and len([v for v in violations if v.severity in [GuardrailSeverity.HIGH, GuardrailSeverity.CRITICAL]]) == 0
+        
+        return GuardrailResult(
+            passed=passed,
+            violations=violations,
+            overall_score=safety_score,
+            safety_score=safety_score,
+            quality_score=1.0,  # Not applicable for prompts
+            bias_score=1.0,     # Not applicable for prompts
+            processing_time_ms=processing_time_ms,
+            metadata={
+                'prompt_length': len(prompt),
+                'word_count': len(prompt.split()),
+                'evaluation_type': 'prompt'
+            }
+        )
+    
+    def get_violation_summary(self, violations: List[GuardrailViolation]) -> Dict[str, Any]:
+        """Get summary statistics of violations"""
+        if not violations:
+            return {'total': 0, 'by_severity': {}, 'by_category': {}}
+        
+        by_severity = {}
+        by_category = {}
+        
+        for violation in violations:
+            # Count by severity
+            severity_key = violation.severity.value
+            by_severity[severity_key] = by_severity.get(severity_key, 0) + 1
+            
+            # Count by category (extracted from rule_id)
+            category = violation.rule_id.split('_')[0] if '_' in violation.rule_id else 'other'
+            by_category[category] = by_category.get(category, 0) + 1
+        
+        return {
+            'total': len(violations),
+            'by_severity': by_severity,
+            'by_category': by_category,
+            'critical_count': by_severity.get('critical', 0),
+            'high_count': by_severity.get('high', 0)
         }
-        
-        return overall_safe, summary
-    
-    def filter_response(
-        self,
-        prompt: str,
-        response: str,
-        metadata: Dict[str, Any] = None
-    ) -> Tuple[str, Dict[str, Any]]:
-        """Filter/modify response based on guardrail results"""
-        is_safe, summary = self.is_response_safe(prompt, response, metadata)
-        
-        if is_safe:
-            return response, summary
-        
-        # Apply filtering based on violation types
-        filtered_response = response
-        
-        # Handle different violation types
-        for violation_type in summary['violations']:
-            if violation_type == GuardrailViolationType.CONTENT_SAFETY.value:
-                filtered_response = self._apply_content_filter(filtered_response)
-            elif violation_type == GuardrailViolationType.LENGTH_VIOLATION.value:
-                filtered_response = self._apply_length_filter(filtered_response)
-            elif violation_type == GuardrailViolationType.FORMAT_INVALID.value:
-                filtered_response = self._apply_format_filter(filtered_response)
-        
-        # Re-check filtered response
-        recheck_safe, recheck_summary = self.is_response_safe(prompt, filtered_response, metadata)
-        
-        summary.update({
-            'filtered': True,
-            'original_length': len(response),
-            'filtered_length': len(filtered_response),
-            'recheck_safe': recheck_safe,
-            'recheck_summary': recheck_summary
-        })
-        
-        return filtered_response, summary
-    
-    def _apply_content_filter(self, response: str) -> str:
-        """Apply content safety filtering"""
-        # Simple content filtering - remove problematic sentences
-        sentences = re.split(r'[.!?]+', response)
-        safe_sentences = []
-        
-        for sentence in sentences:
-            sentence = sentence.strip()
-            if not sentence:
-                continue
-            
-            # Check if sentence contains problematic content
-            is_safe = True
-            for pattern in self.config.safety_patterns:
-                if re.search(pattern, sentence, re.IGNORECASE):
-                    is_safe = False
-                    break
-            
-            if is_safe:
-                safe_sentences.append(sentence)
-        
-        filtered = '. '.join(safe_sentences)
-        if filtered and not filtered.endswith('.'):
-            filtered += '.'
-        
-        return filtered or "I cannot provide a response to that request."
-    
-    def _apply_length_filter(self, response: str) -> str:
-        """Apply length filtering"""
-        if len(response) <= self.config.max_response_length:
-            return response
-        
-        # Truncate at sentence boundaries
-        sentences = re.split(r'[.!?]+', response)
-        truncated_sentences = []
-        current_length = 0
-        
-        for sentence in sentences:
-            sentence = sentence.strip()
-            if not sentence:
-                continue
-            
-            if current_length + len(sentence) + 2 <= self.config.max_response_length:
-                truncated_sentences.append(sentence)
-                current_length += len(sentence) + 2
-            else:
-                break
-        
-        truncated = '. '.join(truncated_sentences)
-        if truncated and not truncated.endswith('.'):
-            truncated += '.'
-        
-        return truncated
-    
-    def _apply_format_filter(self, response: str) -> str:
-        """Apply format filtering"""
-        # Basic format cleaning
-        lines = response.split('\n')
-        cleaned_lines = []
-        
-        for line in lines:
-            line = line.strip()
-            if line and len(line) > 2:  # Filter out very short lines
-                cleaned_lines.append(line)
-        
-        return '\n'.join(cleaned_lines)
     
     def get_stats(self) -> Dict[str, Any]:
-        """Get guardrails performance statistics"""
+        """Get guardrails system statistics"""
+        pass_rate = (self.stats['passed_evaluations'] / self.stats['total_evaluations'] * 100) if self.stats['total_evaluations'] > 0 else 0
+        
         return {
             **self.stats,
-            'violation_rate': (
-                self.stats['violations_found'] / self.stats['total_checks']
-                if self.stats['total_checks'] > 0 else 0.0
-            ),
-            'enabled_guardrails': [g.name for g in self.guardrails],
-            'recent_violations': self.stats['violation_history'][-10:]  # Last 10
+            'pass_rate_percent': round(pass_rate, 2),
+            'config': {
+                'content_safety_enabled': self.enable_content_safety,
+                'quality_check_enabled': self.enable_quality_check,
+                'bias_detection_enabled': self.enable_bias_detection,
+                'format_validation_enabled': self.enable_format_validation,
+                'min_quality_score': self.min_quality_score,
+                'min_safety_score': self.min_safety_score,
+                'min_bias_score': self.min_bias_score
+            }
         }
     
-    def update_config(self, new_config: GuardrailConfig):
-        """Update configuration and reinitialize guardrails"""
-        self.config = new_config
-        self.guardrails = []
-        self._initialize_guardrails()
+    def update_thresholds(self, **kwargs):
+        """Update guardrail thresholds"""
+        if 'min_quality_score' in kwargs:
+            self.min_quality_score = kwargs['min_quality_score']
+        if 'min_safety_score' in kwargs:
+            self.min_safety_score = kwargs['min_safety_score']
+        if 'min_bias_score' in kwargs:
+            self.min_bias_score = kwargs['min_bias_score']
+        
+        logger.info(f"Updated thresholds: quality={self.min_quality_score}, safety={self.min_safety_score}, bias={self.min_bias_score}")
+
+def create_guardrails_system(config_path: str = "config/guardrails_config.json") -> GuardrailsSystem:
+    """Factory function to create guardrails system with configuration"""
     
-    def add_custom_guardrail(self, guardrail: BaseGuardrail):
-        """Add custom guardrail"""
-        self.guardrails.append(guardrail)
-
-
-# Global guardrails manager instance
-_guardrails_manager = None
-
-
-def get_guardrails_manager(config: GuardrailConfig = None) -> GuardrailsManager:
-    """Get or create global guardrails manager"""
-    global _guardrails_manager
-    if _guardrails_manager is None:
-        _guardrails_manager = GuardrailsManager(config)
-    return _guardrails_manager
-
-
-def validate_response(func):
-    """Decorator for automatic response validation"""
-    def wrapper(*args, **kwargs):
-        guardrails = get_guardrails_manager()
-        
-        # Get original response
-        response, metadata = func(*args, **kwargs)
-        
-        # Extract prompt
-        prompt = args[0] if args else kwargs.get('prompt', '')
-        
-        # Validate response
-        is_safe, summary = guardrails.is_response_safe(prompt, response, metadata)
-        
-        # Add validation metadata
-        enhanced_metadata = {
-            **metadata,
-            'guardrails_passed': is_safe,
-            'guardrails_summary': summary,
-            'validation_time': sum(
-                r.processing_time for r in guardrails.check_response(prompt, response, metadata).values()
-            )
-        }
-        
-        return response, enhanced_metadata
+    # Default configuration
+    default_config = {
+        "enable_content_safety": True,
+        "enable_quality_check": True,
+        "enable_bias_detection": True,
+        "enable_format_validation": True,
+        "min_quality_score": 0.6,
+        "min_safety_score": 0.8,
+        "min_bias_score": 0.7,
+        "quality_weight": 0.4,
+        "safety_weight": 0.3,
+        "bias_weight": 0.3
+    }
     
-    return wrapper
-
-
-def filter_response(func):
-    """Decorator for automatic response filtering"""
-    def wrapper(*args, **kwargs):
-        guardrails = get_guardrails_manager()
-        
-        # Get original response
-        response, metadata = func(*args, **kwargs)
-        
-        # Extract prompt
-        prompt = args[0] if args else kwargs.get('prompt', '')
-        
-        # Filter response
-        filtered_response, filter_summary = guardrails.filter_response(prompt, response, metadata)
-        
-        # Add filtering metadata
-        enhanced_metadata = {
-            **metadata,
-            'guardrails_filtered': filter_summary.get('filtered', False),
-            'guardrails_summary': filter_summary
-        }
-        
-        return filtered_response, enhanced_metadata
+    # Load configuration if file exists
+    import os
+    if os.path.exists(config_path):
+        try:
+            with open(config_path, 'r') as f:
+                config = json.load(f)
+                # Merge with defaults
+                default_config.update(config)
+        except Exception as e:
+            logger.error(f"Error loading guardrails config: {e}")
     
-    return wrapper
+    return GuardrailsSystem(default_config)
