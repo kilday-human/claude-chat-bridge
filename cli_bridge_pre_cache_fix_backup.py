@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Claude-GPT Bridge CLI - Production Ready
-Cache architecture fix: consistent key generation for storage/retrieval
+Claude-GPT Bridge CLI - Production Rewrite
+Clean architecture with proper execution flow for Week 2 systems
 """
 
 import argparse
@@ -81,7 +81,7 @@ class EnhancedBridge:
         """
         Production-ready request processing with proper execution flow
         
-        Flow: Input Validation → RAG → Model Selection → Cache Check → Generation → Validation → Cache Store
+        Flow: Input Validation → Cache Check → Generation → Validation → Cache Store
         """
         start_time = time.time()
         
@@ -105,47 +105,16 @@ class EnhancedBridge:
                     )
             
             # =================================================================
-            # STEP 2: RAG ENHANCEMENT (if enabled)
-            # =================================================================
-            rag_context = {}
-            if use_rag:
-                if verbose:
-                    print("🔍 Enhancing with RAG...")
-                enhanced_prompt, rag_context = self.rag_bridge.enhance_prompt(prompt)
-                if verbose and rag_context.get('sources'):
-                    print(f"🔍 RAG: Found {len(rag_context['sources'])} relevant sources")
-            else:
-                enhanced_prompt = prompt
-            
-            # =================================================================
-            # STEP 3: MODEL SELECTION
-            # =================================================================
-            if model:
-                selected_model = model
-                if verbose:
-                    print(f"🎯 Using forced model: {selected_model}")
-            elif use_router:
-                router_result = choose_model(enhanced_prompt)
-                selected_model = router_result["model"]
-                if verbose:
-                    print(f"🧠 Router selected: {selected_model}")
-            else:
-                selected_model = "gpt-4o-mini"  # Default
-                if verbose:
-                    print(f"🎯 Using default model: {selected_model}")
-            
-            # =================================================================
-            # STEP 4: CACHE CHECK (moved here for consistent key generation)
+            # STEP 2: CACHE CHECK
             # =================================================================
             cache_hit = False
             cache_data = None
             
             if use_cache:
-                cache_result = self.cache_manager.get(prompt, selected_model)  # Now uses exact same model
+                cache_result = self.cache_manager.get(prompt, model or "gpt-4o-mini")
                 cached_data, cache_hit, cache_level = cache_result
                 if cache_hit:
-                    cache_data = cached_data
-                    
+                    cache_data = cached_data                    
                     if verbose:
                         print("💾 Cache HIT - validating cached response...")
                     
@@ -167,10 +136,10 @@ class EnhancedBridge:
                             return cached_response, {
                                 'model': cached_model,
                                 'cost': cached_data['cost'] if cached_data and 'cost' in cached_data else 0,
-                                'tokens_used': cached_data['tokens_used'] if cached_data and 'tokens_used' in cached_data else 0,
+                                'tokens_used': cached_data['tokens_used'] if cached_data and 'tokens_used'in cached_data else 0,
                                 'execution_time': execution_time,
                                 'cache_hit': True,
-                                'cache_level': cache_level,
+                                'cache_level': 'memory',
                                 'guardrails_passed': True,
                                 'guardrails_result': cache_validation,
                                 'from_cache': True
@@ -182,6 +151,36 @@ class EnhancedBridge:
             
             if not cache_hit and verbose:
                 print("💾 Cache MISS - generating new response...")
+            
+            # =================================================================
+            # STEP 3: RAG ENHANCEMENT (if enabled)
+            # =================================================================
+            rag_context = {}
+            if use_rag:
+                if verbose:
+                    print("🔍 Enhancing with RAG...")
+                enhanced_prompt, rag_context = self.rag_bridge.enhance_prompt(prompt)
+                if verbose and rag_context.get('sources'):
+                    print(f"🔍 RAG: Found {len(rag_context['sources'])} relevant sources")
+            else:
+                enhanced_prompt = prompt
+            
+            # =================================================================
+            # STEP 4: MODEL SELECTION
+            # =================================================================
+            if model:
+                selected_model = model
+                if verbose:
+                    print(f"🎯 Using forced model: {selected_model}")
+            elif use_router:
+                router_result = choose_model(enhanced_prompt)
+                selected_model = router_result["model"]
+                if verbose:
+                    print(f"🧠 Router selected: {selected_model}")
+            else:
+                selected_model = "gpt-4o-mini"  # Default
+                if verbose:
+                    print(f"🎯 Using default model: {selected_model}")
             
             # =================================================================
             # STEP 5: RESPONSE GENERATION
@@ -272,6 +271,7 @@ class EnhancedBridge:
             # STEP 9: CACHE STORAGE (if enabled and passed guardrails)
             # =================================================================
             if use_cache and guardrails_passed and not cache_hit:
+                print(f"DEBUG: About to store in cache -this should print if reached")
                 cache_data = {
                     'response': response,
                     'cost': cost,
@@ -280,13 +280,15 @@ class EnhancedBridge:
                     'model': selected_model,
                     'rag_enhanced': use_rag
                 }
-                
+
                 self.cache_manager.put(
                     prompt=prompt,
-                    model=selected_model,  # Now uses identical model as retrieval
+                    model=selected_model,
                     data=cache_data
                 )
-                
+                print(f"🔧 DEBUG: put() call completed - checking cache size")
+                if hasattr(self.cache_manager, '_memory_cache'):
+                    print(f"🔧 DEBUG: Cache size after put(): {len(self.cache_manager._memory_cache)}")
                 if verbose:
                     print("💾 Response cached for future requests")
             
