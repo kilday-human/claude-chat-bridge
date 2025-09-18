@@ -46,11 +46,11 @@ class EnhancedBridge:
         self.cache_manager = create_cache_manager()
         self.guardrails_manager = create_guardrails_system()
         
-        # Configure guardrails for production (very lenient thresholds)
+        # Configure guardrails for production (smart thresholds)
         self.guardrails_manager.update_thresholds(
-            min_quality_score=0.1,  # Very lenient for all responses
-            min_safety_score=0.3,   # Very lenient safety
-            min_bias_score=0.3      # Very lenient bias detection
+            min_quality_score=0.3,  # More lenient for short responses
+            min_safety_score=0.8,   # Keep safety strict
+            min_bias_score=0.7      # Keep bias detection active
         )
         
         # API wrappers
@@ -141,13 +141,8 @@ class EnhancedBridge:
             cache_data = None
             
             if use_cache:
-                # Proper cache check using cache manager
-                cache_result = self.cache_manager.get(prompt, selected_model)
+                cache_result = self.cache_manager.get(prompt, selected_model)  # Now uses exact same model
                 cached_data, cache_hit, cache_level = cache_result
-                
-                if verbose:
-                    print(f"🔍 Cache debug: hit={cache_hit}, level={cache_level}, data={'present' if cached_data else 'None'}")
-                
                 if cache_hit:
                     cache_data = cached_data
                     
@@ -167,7 +162,6 @@ class EnhancedBridge:
                             # Return valid cached response
                             execution_time = time.time() - start_time
                             self.session_stats['cache_hits'] += 1
-                            self.session_stats['requests'] += 1  # Increment request count for cache hits
                             self._update_session_stats(execution_time, cached_data['cost'] if cached_data and 'cost' in cached_data else 0)
                             
                             return cached_response, {
@@ -188,6 +182,7 @@ class EnhancedBridge:
             
             if not cache_hit and verbose:
                 print("💾 Cache MISS - generating new response...")
+            
             # =================================================================
             # STEP 5: RESPONSE GENERATION
             # =================================================================
@@ -286,9 +281,6 @@ class EnhancedBridge:
                     'rag_enhanced': use_rag
                 }
                 
-                if verbose:
-                    print(f"💾 Storing cache for prompt: '{prompt[:20]}...' with model: {selected_model}")
-                
                 self.cache_manager.put(
                     prompt=prompt,
                     model=selected_model,  # Now uses identical model as retrieval
@@ -338,20 +330,11 @@ class EnhancedBridge:
         # Short factual questions
         if any(word in prompt_lower for word in ['what is', 'who is', 'when did', 'where is']):
             if 'capital' in prompt_lower:
-                if 'france' in prompt_lower:
-                    return "The capital of France is Paris. Paris has been the capital since the 6th century and serves as the political, economic, and cultural center of France."
-                elif 'germany' in prompt_lower:
-                    return "The capital of Germany is Berlin. Berlin has been the capital since 1990 and serves as the political and cultural center of Germany."
-                elif 'spain' in prompt_lower:
-                    return "The capital of Spain is Madrid. Madrid has been the capital since 1561 and serves as the political and economic center of Spain."
-                elif 'italy' in prompt_lower:
-                    return "The capital of Italy is Rome. Rome has been the capital since 1871 and serves as the political and cultural center of Italy."
-                else:
-                    return "The capital is Paris. It has been the capital since the 6th century and serves as the political and economic center."
+                return "The capital is [City Name]. It has been the capital since [Year] and serves as the political and economic center."
             elif len(prompt) < 50:
-                return f"The answer is a specific factual response. This provides accurate information about {prompt.split()[-1]}."
+                return f"The answer is [specific answer]. This is a factual response to your question about {prompt.split()[-1]}."
             else:
-                return f"Based on your question about {prompt.split()[-1]}, here's a comprehensive answer: This involves detailed explanation with multiple sentences providing context and background information."
+                return f"Based on your question about {prompt.split()[-1]}, here's a comprehensive answer: [Detailed explanation with multiple sentences providing context and background information]."
         
         # How-to questions
         elif 'how to' in prompt_lower or 'how do' in prompt_lower:
@@ -733,7 +716,7 @@ def main():
             print(f"💰 Cost: ${metadata.get('cost', 0):.6f}")
             print(f"🔢 Tokens: {metadata.get('tokens_used', 0)}")
             print(f"⏱️ Time: {metadata.get('execution_time', 0):.3f}s")
-            print(f"💾 Cache: {'✅ HIT' if metadata.get('cache_hit') else '🔄 MISS'}")
+            print(f"💾 Cache: {'✅ HIT' if metadata.get('cache_hit') else '❌ MISS'}")
             print(f"🛡️ Guardrails: {'✅ PASS' if metadata.get('guardrails_passed') else '❌ FAIL'}")
             
             if metadata.get('guardrails_result'):

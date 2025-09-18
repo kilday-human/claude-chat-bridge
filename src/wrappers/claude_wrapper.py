@@ -18,7 +18,7 @@ class ClaudeWrapper:
         self.max_tokens = max_tokens
         self.mock = mock
 
-        api_key = os.getenv("ANTHROPIC_API_KEY")
+        api_key = os.getenv("CLAUDE_API_KEY")
 
         # Enable mock mode if explicitly requested OR key missing
         if self.mock or not api_key:
@@ -29,7 +29,7 @@ class ClaudeWrapper:
                 raise ImportError("anthropic package not installed. Run `pip install anthropic`.")
             self.client = anthropic.Anthropic(api_key=api_key)
 
-    def generate(self, prompt: str) -> dict:
+    def generate(self, prompt: str, mock: bool = False) -> dict:
         if self.mock:
             # Return fake reply
             return {

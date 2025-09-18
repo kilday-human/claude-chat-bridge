@@ -1026,3 +1026,18 @@ def create_eval_harness(bridge_system, config_path: str = "config/eval_config.js
             logger.error(f"Error loading eval config: {e}")
     
     return EvalHarness(bridge_system, default_config)
+
+class TestSuiteLoader:
+    """Test suite loader for evaluation harness"""
+    
+    @staticmethod
+    def create_default_suite() -> List[TestCase]:
+        """Create default test suite"""
+        generator = TestCaseGenerator()
+        return generator.get_test_cases()
+    
+    @staticmethod
+    def create_stress_test_suite(count: int) -> List[TestCase]:
+        """Create stress test suite"""
+        generator = TestCaseGenerator()
+        return generator.get_test_cases(count=count)

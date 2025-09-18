@@ -1,0 +1,46 @@
+{
+  "f12252ec128f8f5e2c47253ed9b442e2": {
+    "timestamp": 1758168027.1594229,
+    "access_count": 1,
+    "ttl": 3600,
+    "size_bytes": 128,
+    "cache_key": "f12252ec128f8f5e2c47253ed9b442e2",
+    "metadata": {
+      "model": "gpt-4o-mini",
+      "prompt_length": 31
+    }
+  },
+  "7d4ff707d00fcec1f685852fc6b83474": {
+    "timestamp": 1758168030.433911,
+    "access_count": 1,
+    "ttl": 3600,
+    "size_bytes": 987,
+    "cache_key": "7d4ff707d00fcec1f685852fc6b83474",
+    "metadata": {
+      "model": "claude-haiku",
+      "prompt_length": 31
+    }
+  },
+  "e837d80acae3652cb554f90ebe8afbac": {
+    "timestamp": 1758168133.3853598,
+    "access_count": 1,
+    "ttl": 3600,
+    "size_bytes": 1567,
+    "cache_key": "e837d80acae3652cb554f90ebe8afbac",
+    "metadata": {
+      "model": "gpt-4o-mini",
+      "prompt_length": 25
+    }
+  },
+  "a00c9aa1bfa597ec69676a25a5d5820c": {
+    "timestamp": 1758168296.495709,
+    "access_count": 1,
+    "ttl": 3600,
+    "size_bytes": 123,
+    "cache_key": "a00c9aa1bfa597ec69676a25a5d5820c",
+    "metadata": {
+      "model": "gpt-4o-mini",
+      "prompt_length": 12
+    }
+  }
+}

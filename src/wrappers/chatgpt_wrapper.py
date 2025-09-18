@@ -41,7 +41,7 @@ def send_to_chatgpt(prompt: str, mock: bool = False):
     body = {
         "model": DEFAULT_MODEL,
         "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.7,
+        # Remove temperature parameter - let it use default value
     }
 
     t0 = time.perf_counter()

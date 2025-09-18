@@ -271,6 +271,9 @@ class CacheManager:
         self._memory_cache[cache_key] = entry
         self._stats['memory_size'] += 1
         
+        # Also save to disk immediately for persistence
+        self._save_to_disk(cache_key, entry)
+        
         logger.debug(f"Cached response: {cache_key} (model: {model})")
     
     def _remove_from_disk(self, cache_key: str):
