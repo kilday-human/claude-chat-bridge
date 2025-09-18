@@ -2,6 +2,9 @@
 
 **AI model routing and comparison system with RAG enhancement.**
 
+## Overview
+Claude-GPT Bridge demonstrates AI infrastructure patterns through intelligent model routing, knowledge retrieval, and multi-model comparison. Built to explore production AI challenges including cost optimization, response quality, and system integration.
+
 ## Working Features
 
 ### Smart Routing
