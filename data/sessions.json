@@ -1,0 +1,70 @@
+{
+  "session_a3f253c0": {
+    "session_id": "session_a3f253c0",
+    "created_at": "2025-09-19T02:58:55.073287",
+    "last_activity": "2025-09-19T02:58:55.073440",
+    "request_count": 1,
+    "total_tokens": 7,
+    "total_cost": 0.0,
+    "queries": [
+      {
+        "query": "What is the capital of Japan?",
+        "timestamp": "2025-09-19T02:58:55.073437",
+        "response_time_ms": 8721,
+        "tokens": 7,
+        "cost": 0.0
+      }
+    ]
+  },
+  "session_e350e3c6": {
+    "session_id": "session_e350e3c6",
+    "created_at": "2025-09-19T03:01:07.614105",
+    "last_activity": "2025-09-19T03:01:07.614792",
+    "request_count": 1,
+    "total_tokens": 9,
+    "total_cost": 0.0,
+    "queries": [
+      {
+        "query": "Hi",
+        "timestamp": "2025-09-19T03:01:07.614780",
+        "response_time_ms": 3974,
+        "tokens": 9,
+        "cost": 0.0
+      }
+    ]
+  },
+  "session_16682ea8": {
+    "session_id": "session_16682ea8",
+    "created_at": "2025-09-19T03:04:54.434875",
+    "last_activity": "2025-09-19T03:04:54.435341",
+    "request_count": 1,
+    "total_tokens": 39,
+    "total_cost": 0.0,
+    "queries": [
+      {
+        "query": "Hello",
+        "timestamp": "2025-09-19T03:04:54.435332",
+        "response_time_ms": 3458,
+        "tokens": 39,
+        "cost": 0.0
+      }
+    ]
+  },
+  "session_3be79a0e": {
+    "session_id": "session_3be79a0e",
+    "created_at": "2025-09-19T03:05:18.698797",
+    "last_activity": "2025-09-19T03:05:18.699195",
+    "request_count": 1,
+    "total_tokens": 4,
+    "total_cost": 0.0,
+    "queries": [
+      {
+        "query": "What is 2+2?",
+        "timestamp": "2025-09-19T03:05:18.699186",
+        "response_time_ms": 3626,
+        "tokens": 4,
+        "cost": 0.0
+      }
+    ]
+  }
+}

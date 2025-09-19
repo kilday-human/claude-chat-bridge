@@ -53,7 +53,7 @@ class ZapierWebhookClient:
     def __init__(self):
         self.webhook_url = os.getenv('ZAPIER_WEBHOOK_URL')
         self.enabled = os.getenv('ENABLE_WEBHOOK', 'false').lower() == 'true'
-        self.timeout = 5.0  # 5-second timeout as specified
+        self.timeout = 5.0  # 5-second timeout for webhook calls
         
     async def send_usage_data(self, payload: UsagePayload) -> bool:
         """
@@ -80,7 +80,7 @@ class ZapierWebhookClient:
                         return False
                         
         except asyncio.TimeoutError:
-            logger.warning("Zapier webhook timed out after 5 seconds")
+            logger.warning(f"Zapier webhook timed out after {self.timeout} seconds")
             if SENTRY_AVAILABLE:
                 sentry_sdk.capture_exception(Exception("Zapier webhook timeout"))
             return False
@@ -194,3 +194,28 @@ async def track_gpt_bridge_usage(session_id: str,
         success=success,
         user_agent=user_agent
     )
+
+# Synchronous version for CLI integration
+def track_gpt_bridge_usage_sync(session_id: str,
+                               query: str,
+                               model_name: str, 
+                               response_time_ms: int,
+                               estimated_tokens: int,
+                               success: bool,
+                               user_agent: Optional[str] = None) -> bool:
+    """
+    Synchronous version for CLI integration
+    """
+    try:
+        return asyncio.run(track_gpt_bridge_usage(
+            session_id=session_id,
+            query=query,
+            model_name=model_name,
+            response_time_ms=response_time_ms,
+            estimated_tokens=estimated_tokens,
+            success=success,
+            user_agent=user_agent
+        ))
+    except Exception as e:
+        logger.error(f"Sync webhook tracking failed: {e}")
+        return False

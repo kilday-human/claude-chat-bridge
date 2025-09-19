@@ -45,7 +45,7 @@ def send_to_chatgpt(prompt: str, mock: bool = False):
     }
 
     t0 = time.perf_counter()
-    resp = requests.post(ENDPOINT, headers=headers, json=body, timeout=60)
+    resp = requests.post(ENDPOINT, headers=headers, json=body, timeout=30)
     latency = time.perf_counter() - t0
 
     try:

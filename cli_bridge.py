@@ -29,6 +29,10 @@ from src.eval_harness import *
 from src.wrappers.chatgpt_wrapper import send_to_chatgpt
 from src.wrappers.claude_wrapper import ClaudeWrapper
 
+# Zapier Integration
+from src.webhook_integration import track_gpt_bridge_usage_sync
+from src.session_manager import session_manager
+
 
 class EnhancedBridge:
     """Production-ready AI bridge with Week 2 systems"""
@@ -320,6 +324,59 @@ class EnhancedBridge:
                 'success': True,
                 **api_metadata
             }
+            
+            # =================================================================
+            # ZAPIER INTEGRATION: Track usage data
+            # =================================================================
+            if not mock:  # Only track real usage, not mock calls
+                try:
+                    # Get or create persistent session
+                    session_id = session_manager.get_or_create_session()
+                    response_time_ms = int(execution_time * 1000)
+                    
+                    # Extract tokens from api_metadata - check both possible formats
+                    if verbose:
+                        print(f"🔍 DEBUG: Raw api_metadata: {api_metadata}")
+                    
+                    if 'usage' in api_metadata and isinstance(api_metadata['usage'], dict):
+                        estimated_tokens = api_metadata['usage'].get('total', 0)
+                        if verbose:
+                            print(f"🔍 DEBUG: Using usage.total: {estimated_tokens}")
+                    else:
+                        estimated_tokens = api_metadata.get('tokens_used', 0)
+                        if verbose:
+                            print(f"🔍 DEBUG: Using tokens_used: {estimated_tokens}")
+                    
+                    # Add query to session tracking
+                    session_manager.add_query_to_session(
+                        session_id=session_id,
+                        query=prompt,
+                        response_time_ms=response_time_ms,
+                        tokens=estimated_tokens,
+                        cost=cost
+                    )
+                    
+                    # Send webhook synchronously with short timeout
+                    try:
+                        track_gpt_bridge_usage_sync(
+                            session_id=session_id,
+                            query=prompt,
+                            model_name=selected_model,
+                            response_time_ms=response_time_ms,
+                            estimated_tokens=estimated_tokens,
+                            success=True,
+                            user_agent="GPT-Bridge-CLI"
+                        )
+                        if verbose:
+                            print(f"📊 Usage data sent to Zapier webhook (session: {session_id})")
+                    except Exception as e:
+                        if verbose:
+                            print(f"⚠️ Webhook tracking failed (non-critical): {e}")
+                    
+                except Exception as e:
+                    # Don't let webhook failures break the main flow
+                    if verbose:
+                        print(f"⚠️ Webhook tracking failed (non-critical): {e}")
             
             return response, metadata
             

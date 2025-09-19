@@ -1,0 +1,11 @@
+{
+  "timestamp": 1758250205.503697,
+  "access_count": 1,
+  "ttl": 3600,
+  "size_bytes": 2086,
+  "cache_key": "e303c0b7e7422c6e30afc252050d38a0",
+  "metadata": {
+    "model": "gpt-4o-mini",
+    "prompt_length": 29
+  }
+}
