@@ -21,17 +21,6 @@
       "prompt_length": 31
     }
   },
-  "e837d80acae3652cb554f90ebe8afbac": {
-    "timestamp": 1758168133.3853598,
-    "access_count": 1,
-    "ttl": 3600,
-    "size_bytes": 1567,
-    "cache_key": "e837d80acae3652cb554f90ebe8afbac",
-    "metadata": {
-      "model": "gpt-4o-mini",
-      "prompt_length": 25
-    }
-  },
   "a00c9aa1bfa597ec69676a25a5d5820c": {
     "timestamp": 1758168296.495709,
     "access_count": 1,
@@ -41,6 +30,83 @@
     "metadata": {
       "model": "gpt-4o-mini",
       "prompt_length": 12
+    }
+  },
+  "2700d483596c36da84cb970d49b738df": {
+    "timestamp": 1758245778.368692,
+    "access_count": 1,
+    "ttl": 3600,
+    "size_bytes": 314,
+    "cache_key": "2700d483596c36da84cb970d49b738df",
+    "metadata": {
+      "model": "gpt-4o-mini",
+      "prompt_length": 24
+    }
+  },
+  "1d82c356dab20fa5ec70a4fcad63eb6c": {
+    "timestamp": 1758245836.992088,
+    "access_count": 1,
+    "ttl": 3600,
+    "size_bytes": 4880,
+    "cache_key": "1d82c356dab20fa5ec70a4fcad63eb6c",
+    "metadata": {
+      "model": "gpt-4o-mini",
+      "prompt_length": 53
+    }
+  },
+  "e837d80acae3652cb554f90ebe8afbac": {
+    "timestamp": 1758245867.1453571,
+    "access_count": 1,
+    "ttl": 3600,
+    "size_bytes": 1833,
+    "cache_key": "e837d80acae3652cb554f90ebe8afbac",
+    "metadata": {
+      "model": "gpt-4o-mini",
+      "prompt_length": 25
+    }
+  },
+  "ffa5e682d48aad2b1a7474f6a2eb45af": {
+    "timestamp": 1758245921.5767128,
+    "access_count": 1,
+    "ttl": 3600,
+    "size_bytes": 4248,
+    "cache_key": "ffa5e682d48aad2b1a7474f6a2eb45af",
+    "metadata": {
+      "model": "gpt-4o-mini",
+      "prompt_length": 25
+    }
+  },
+  "9685a4225ef711110f91cba045d798c2": {
+    "timestamp": 1758246932.1485949,
+    "access_count": 1,
+    "ttl": 3600,
+    "size_bytes": 314,
+    "cache_key": "9685a4225ef711110f91cba045d798c2",
+    "metadata": {
+      "model": "gpt-4o-mini",
+      "prompt_length": 24
+    }
+  },
+  "96881d6fadf2eb2ba716c086c9f1f69c": {
+    "timestamp": 1758247034.8385391,
+    "access_count": 1,
+    "ttl": 3600,
+    "size_bytes": 328,
+    "cache_key": "96881d6fadf2eb2ba716c086c9f1f69c",
+    "metadata": {
+      "model": "gpt-4o-mini",
+      "prompt_length": 38
+    }
+  },
+  "ed3073f853f7dd44aec091a47e9f8f24": {
+    "timestamp": 1758247382.5701382,
+    "access_count": 1,
+    "ttl": 3600,
+    "size_bytes": 330,
+    "cache_key": "ed3073f853f7dd44aec091a47e9f8f24",
+    "metadata": {
+      "model": "gpt-4o-mini",
+      "prompt_length": 40
     }
   }
 }
